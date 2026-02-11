@@ -10,7 +10,6 @@ Complete requirements specification including:
 - Core features and nice-to-have features
 - Non-functional requirements (performance, security, usability)
 - Technical requirements (frontend, backend, database, AWS services)
-- User stories and acceptance criteria
 - Constraints, assumptions, and success metrics
 - Risks and mitigation strategies
 - Future enhancement roadmap
@@ -45,19 +44,18 @@ Complete technical design including:
 
 ### For Developers
 1. Read **requirements.md** section 6 (technical requirements)
-2. Study **requirements.md** section 13 (diagrams)
+2. Study **requirements.md** section 11 (diagrams)
 3. Read **design.md** sections 2-6 (architecture, components, data, API)
-4. Review **requirements.md** section 8 (acceptance criteria)
 
 ### For DevOps Engineers
 1. Read **requirements.md** section 6.5 (infrastructure requirements)
-2. Study **requirements.md** section 13 diagrams (AWS infrastructure)
+2. Study **requirements.md** section 11 diagrams (AWS infrastructure)
 3. Read **design.md** sections on infrastructure and deployment
 
 ### For QA Engineers
-1. Read **requirements.md** section 7 (user stories)
-2. Review **requirements.md** section 8 (acceptance criteria)
-3. Study **requirements.md** section 13 (flowcharts)
+1. Read **requirements.md** section 3 (core features with requirements)
+2. Review **requirements.md** section 5 (non-functional requirements)
+3. Study **requirements.md** section 11 (flowcharts)
 
 ## 📊 System Overview
 

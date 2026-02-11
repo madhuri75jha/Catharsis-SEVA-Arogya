@@ -118,13 +118,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Mark low-confidence words for review
 - Provide visual feedback during recording
 
-**Acceptance Criteria**:
-- ✓ 90% overall transcription accuracy
-- ✓ 98% accuracy for common medical terms (100+ term test set)
-- ✓ 2-second maximum latency from speech end to text display
-- ✓ Handle 20 short dictations per minute per user
-- ✓ Graceful handling of background noise
-
 ### 3.2 Automatic Note Structuring (HIGH PRIORITY)
 
 **Description**: Convert transcribed free-text into structured prescription elements.
@@ -140,13 +133,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Populate digital prescription template automatically
 - Place unrecognized information in "Notes" section
 - Support real-time updates as new voice input arrives
-
-**Acceptance Criteria**:
-- ✓ 90% field population accuracy (9/10 test prescriptions)
-- ✓ All dictated information preserved (no data loss)
-- ✓ Correct categorization of medications vs instructions
-- ✓ Support for complex medical sentences
-- ✓ Manual override capability without data loss
 
 ### 3.3 Smart Suggestion Engine (HIGH PRIORITY)
 
@@ -166,13 +152,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Allow one-click acceptance or easy dismissal
 - Never auto-add without user confirmation
 
-**Acceptance Criteria**:
-- ✓ 80% suggestion relevance (8/10 test scenarios)
-- ✓ Non-intrusive UI (user feedback validation)
-- ✓ Adaptive learning (Drug A becomes top suggestion after 5 uses)
-- ✓ Optional toggle to disable suggestions
-- ✓ Response time < 500ms for suggestion generation
-
 ### 3.4 Multi-Language Output (MEDIUM PRIORITY)
 
 **Description**: Generate prescriptions in multiple languages (English and Hindi initially).
@@ -188,13 +167,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Preserve medical terms (drug names, units) without translation
 - Use custom terminology glossary for accuracy
 - Display preview before finalization
-
-**Acceptance Criteria**:
-- ✓ Accurate Hindi translation (4/5 prescriptions validated by bilingual expert)
-- ✓ Medical terms remain unchanged
-- ✓ Proper Hindi script rendering in PDF
-- ✓ Grammar and spelling correctness
-- ✓ Fallback to English on translation failure
 
 ### 3.5 Secure Doctor Login & Profile (HIGH PRIORITY)
 
@@ -216,14 +188,6 @@ To provide doctors with an AI-powered voice assistant that:
   - Digital signature (optional)
 - Data isolation (doctors access only their own data)
 
-**Acceptance Criteria**:
-- ✓ Successful registration and login flow
-- ✓ Password hashing (bcrypt or similar)
-- ✓ JWT token validation on all API calls
-- ✓ 401 error for invalid/expired tokens
-- ✓ Profile updates persist correctly
-- ✓ No cross-doctor data access
-
 ### 3.6 Standardized Digital Prescription (HIGH PRIORITY)
 
 **Description**: Generate professional, legible prescription documents.
@@ -243,16 +207,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Download and print options
 - Optional email/WhatsApp sharing
 - Store copy in database for audit
-
-**Acceptance Criteria**:
-- ✓ All structured fields appear in PDF
-- ✓ Consistent formatting across prescriptions
-- ✓ Font size ≥ 11pt for body text
-- ✓ Clear medication table layout
-- ✓ PDF generation < 3 seconds
-- ✓ File size < 200KB per prescription
-- ✓ Print-ready output (no cut-off sections)
-
 
 ---
 
@@ -715,6 +669,10 @@ To provide doctors with an AI-powered voice assistant that:
 - Clinical decision support
 - Research data aggregation
 - International expansion
+
+---
+
+## 11. Visual Diagrams
 
 # SEVA Arogya - System Diagrams
 
@@ -1588,7 +1546,7 @@ Doctor    React App    ALB    Flask API    Cognito    Transcribe    Comprehend  
 
 ---
 
-## 14. Glossary
+## 12. Glossary
 
 - **OPD**: Outpatient Department - clinic setting where patients visit for consultation
 - **STT**: Speech-to-Text - technology that converts spoken words to written text
@@ -1647,6 +1605,7 @@ This is the complete requirements and planning document for SEVA Arogya. For det
 - Section 3: Core Features (detailed requirements)
 - Section 5: Non-Functional Requirements (performance, security, etc.)
 - Section 6: Technical Requirements (stack and infrastructure)
-- Section 7-8: User Stories and Acceptance Criteria
-- Section 13: Visual Diagrams (all system diagrams)
-- Section 14: Glossary (terminology reference)
+- Section 7: Constraints & Assumptions
+- Section 8: Success Metrics
+- Section 11: Visual Diagrams (all system diagrams)
+- Section 12: Glossary (terminology reference)
