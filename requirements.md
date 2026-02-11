@@ -1,12 +1,35 @@
-# SEVA Arogya - Requirements Document
+# SEVA Arogya - Requirements & Planning Document
+
+**Version**: 2.0  
+**Last Updated**: 2026-02-11  
+**Status**: Approved for Development
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [System Overview](#2-system-overview)
+3. [Core Features](#3-core-features)
+4. [Nice-to-Have Features](#4-nice-to-have-features)
+5. [Non-Functional Requirements](#5-non-functional-requirements)
+6. [Technical Requirements](#6-technical-requirements)
+7. [User Stories](#7-user-stories)
+8. [Acceptance Criteria](#8-acceptance-criteria)
+9. [Constraints & Assumptions](#9-constraints--assumptions)
+10. [Success Metrics](#10-success-metrics)
+11. [Risks & Mitigation](#11-risks--mitigation)
+12. [Future Enhancements](#12-future-enhancements)
+13. [Visual Diagrams](#13-visual-diagrams)
+14. [Glossary](#14-glossary)
+
+---
 
 ## 1. Executive Summary
 
-SEVA Arogya is a voice-enabled clinical note capture and prescription generation system designed specifically for Indian healthcare settings. The system enables doctors to dictate clinical notes, automatically structures them into prescriptions, and generates professional, multi-language prescription documents. This solution addresses the critical need for faster, more accurate prescription generation in busy OPD (Outpatient Department) environments.
+SEVA Arogya is a voice-enabled clinical note capture and prescription generation system designed specifically for Indian healthcare settings. The system enables doctors to dictate clinical notes, automatically structures them into prescriptions, and generates professional, multi-language prescription documents.
 
-## 2. System Overview
-
-### 2.1 Purpose
+### 1.1 Purpose
 To provide doctors with an AI-powered voice assistant that:
 - Reduces prescription writing time by 70%
 - Eliminates handwriting legibility issues
@@ -14,17 +37,73 @@ To provide doctors with an AI-powered voice assistant that:
 - Maintains medical accuracy and compliance
 - Integrates seamlessly into existing clinical workflows
 
-### 2.2 Target Users
+### 1.2 Target Users
 - **Primary**: Doctors in OPD settings (clinics, hospitals)
 - **Secondary**: Patients receiving prescriptions
 - **Future**: Clinic administrators, healthcare systems
 
-### 2.3 Key Differentiators
+### 1.3 Key Differentiators
 - Medical-domain optimized speech recognition
 - Indian accent and terminology support
 - Context-aware medication suggestions
 - Multi-language prescription output
 - Cloud-based, scalable architecture
+
+---
+
+## 2. System Overview
+
+### 2.1 High-Level Architecture
+
+```
+┌─────────────┐
+│   Doctor    │
+│  (Browser)  │
+└──────┬──────┘
+       │ Voice Input
+       ▼
+┌─────────────────────────────────────────┐
+│         React Frontend                  │
+│  - Voice Recording                      │
+│  - Prescription Form                    │
+│  - Real-time Updates                    │
+└──────┬──────────────────────────────────┘
+       │ HTTPS + JWT
+       ▼
+┌─────────────────────────────────────────┐
+│    Flask Backend (AWS ECS Fargate)      │
+│  - Authentication                       │
+│  - Voice Processing                     │
+│  - NLP & Structuring                    │
+│  - Suggestion Engine                    │
+│  - PDF Generation                       │
+└──────┬──────────────────────────────────┘
+       │
+       ├──────────────┬──────────────┐
+       ▼              ▼              ▼
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ AWS AI   │   │   RDS    │   │   S3     │
+│ Services │   │PostgreSQL│   │  PDFs    │
+└──────────┘   └──────────┘   └──────────┘
+```
+
+### 2.2 Technology Stack Summary
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | React 18+ | User interface |
+| Backend | Flask (Python) | API and business logic |
+| Database | PostgreSQL (RDS) | Data persistence |
+| Storage | AWS S3 | PDF storage |
+| Auth | AWS Cognito | User authentication |
+| STT | AWS Transcribe Medical | Speech-to-text |
+| NLP | AWS Comprehend Medical | Entity extraction |
+| Translation | AWS Translate | Multi-language support |
+| Hosting | AWS ECS Fargate | Container hosting |
+| Load Balancer | AWS ALB | Traffic distribution |
+
+
+---
 
 ## 3. Core Features
 
@@ -42,11 +121,11 @@ To provide doctors with an AI-powered voice assistant that:
 - Provide visual feedback during recording
 
 **Acceptance Criteria**:
-- 90% overall transcription accuracy
-- 98% accuracy for common medical terms (100+ term test set)
-- 2-second maximum latency from speech end to text display
-- Handle 20 short dictations per minute per user
-- Graceful handling of background noise
+- ✓ 90% overall transcription accuracy
+- ✓ 98% accuracy for common medical terms (100+ term test set)
+- ✓ 2-second maximum latency from speech end to text display
+- ✓ Handle 20 short dictations per minute per user
+- ✓ Graceful handling of background noise
 
 ### 3.2 Automatic Note Structuring (HIGH PRIORITY)
 
@@ -65,12 +144,11 @@ To provide doctors with an AI-powered voice assistant that:
 - Support real-time updates as new voice input arrives
 
 **Acceptance Criteria**:
-- 90% field population accuracy (9/10 test prescriptions)
-- All dictated information preserved (no data loss)
-- Correct categorization of medications vs instructions
-- Support for complex medical sentences
-- Manual override capability without data loss
-
+- ✓ 90% field population accuracy (9/10 test prescriptions)
+- ✓ All dictated information preserved (no data loss)
+- ✓ Correct categorization of medications vs instructions
+- ✓ Support for complex medical sentences
+- ✓ Manual override capability without data loss
 
 ### 3.3 Smart Suggestion Engine (HIGH PRIORITY)
 
@@ -91,11 +169,11 @@ To provide doctors with an AI-powered voice assistant that:
 - Never auto-add without user confirmation
 
 **Acceptance Criteria**:
-- 80% suggestion relevance (8/10 test scenarios)
-- Non-intrusive UI (user feedback validation)
-- Adaptive learning (Drug A becomes top suggestion after 5 uses)
-- Optional toggle to disable suggestions
-- Response time < 500ms for suggestion generation
+- ✓ 80% suggestion relevance (8/10 test scenarios)
+- ✓ Non-intrusive UI (user feedback validation)
+- ✓ Adaptive learning (Drug A becomes top suggestion after 5 uses)
+- ✓ Optional toggle to disable suggestions
+- ✓ Response time < 500ms for suggestion generation
 
 ### 3.4 Multi-Language Output (MEDIUM PRIORITY)
 
@@ -114,11 +192,11 @@ To provide doctors with an AI-powered voice assistant that:
 - Display preview before finalization
 
 **Acceptance Criteria**:
-- Accurate Hindi translation (4/5 prescriptions validated by bilingual expert)
-- Medical terms remain unchanged
-- Proper Hindi script rendering in PDF
-- Grammar and spelling correctness
-- Fallback to English on translation failure
+- ✓ Accurate Hindi translation (4/5 prescriptions validated by bilingual expert)
+- ✓ Medical terms remain unchanged
+- ✓ Proper Hindi script rendering in PDF
+- ✓ Grammar and spelling correctness
+- ✓ Fallback to English on translation failure
 
 ### 3.5 Secure Doctor Login & Profile (HIGH PRIORITY)
 
@@ -141,13 +219,12 @@ To provide doctors with an AI-powered voice assistant that:
 - Data isolation (doctors access only their own data)
 
 **Acceptance Criteria**:
-- Successful registration and login flow
-- Password hashing (bcrypt or similar)
-- JWT token validation on all API calls
-- 401 error for invalid/expired tokens
-- Profile updates persist correctly
-- No cross-doctor data access
-
+- ✓ Successful registration and login flow
+- ✓ Password hashing (bcrypt or similar)
+- ✓ JWT token validation on all API calls
+- ✓ 401 error for invalid/expired tokens
+- ✓ Profile updates persist correctly
+- ✓ No cross-doctor data access
 
 ### 3.6 Standardized Digital Prescription (HIGH PRIORITY)
 
@@ -170,13 +247,16 @@ To provide doctors with an AI-powered voice assistant that:
 - Store copy in database for audit
 
 **Acceptance Criteria**:
-- All structured fields appear in PDF
-- Consistent formatting across prescriptions
-- Font size ≥ 11pt for body text
-- Clear medication table layout
-- PDF generation < 3 seconds
-- File size < 200KB per prescription
-- Print-ready output (no cut-off sections)
+- ✓ All structured fields appear in PDF
+- ✓ Consistent formatting across prescriptions
+- ✓ Font size ≥ 11pt for body text
+- ✓ Clear medication table layout
+- ✓ PDF generation < 3 seconds
+- ✓ File size < 200KB per prescription
+- ✓ Print-ready output (no cut-off sections)
+
+
+---
 
 ## 4. Nice-to-Have Features (Future Scope)
 
@@ -206,6 +286,8 @@ To provide doctors with an AI-powered voice assistant that:
 - Advanced audit trails
 - Data anonymization for research
 
+---
+
 ## 5. Non-Functional Requirements
 
 ### 5.1 Performance
@@ -225,7 +307,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Horizontal scaling of backend services
 - Auto-scaling based on load (CPU/memory)
 - Linear performance degradation with user growth
-
 
 ### 5.2 Reliability & Availability
 
@@ -302,7 +383,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Screen reader compatibility (future)
 - High contrast mode (future)
 
-
 ### 5.5 Maintainability & Extensibility
 
 **Code Organization**:
@@ -359,6 +439,9 @@ To provide doctors with an AI-powered voice assistant that:
 - Minimal manual intervention
 - Efficient resource utilization
 
+
+---
+
 ## 6. Technical Requirements
 
 ### 6.1 Frontend Requirements
@@ -377,7 +460,6 @@ To provide doctors with an AI-powered voice assistant that:
 - PDF preview and download
 - Responsive layout
 - Progressive Web App (PWA) capability (future)
-
 
 ### 6.2 Backend Requirements
 
@@ -463,7 +545,6 @@ To provide doctors with an AI-powered voice assistant that:
 - Metrics and monitoring
 - Alarms and notifications
 
-
 ### 6.5 Infrastructure Requirements
 
 **Deployment Platform**: AWS ECS Fargate
@@ -497,6 +578,9 @@ To provide doctors with an AI-powered voice assistant that:
 - Docker image building
 - ECR for container registry
 - Automated deployment to ECS
+
+
+---
 
 ## 7. User Stories
 
@@ -538,7 +622,6 @@ To provide doctors with an AI-powered voice assistant that:
 - **So that** they look professional and can be referenced later
 - **Acceptance**: Consistent format, includes letterhead, fits on one page
 
-
 ### 7.2 Patient Stories
 
 **Story 7: Legible Prescription**
@@ -566,6 +649,8 @@ To provide doctors with an AI-powered voice assistant that:
 - **I want** easy system updates and feature additions
 - **So that** the product stays current with medical advancements
 - **Acceptance**: Modular architecture, clear documentation, automated deployment
+
+---
 
 ## 8. Acceptance Criteria Summary
 
@@ -627,6 +712,7 @@ To provide doctors with an AI-powered voice assistant that:
 - ✓ No cross-user access
 - ✓ Secure secrets management
 
+---
 
 ## 9. Constraints & Assumptions
 
@@ -676,6 +762,9 @@ To provide doctors with an AI-powered voice assistant that:
 - Market demand for digital prescription solutions
 - Regulatory environment favorable for health tech
 
+
+---
+
 ## 10. Success Metrics
 
 ### 10.1 User Adoption
@@ -701,6 +790,8 @@ To provide doctors with an AI-powered voice assistant that:
 - Zero data loss incidents
 - < 10 critical bugs per release
 - 90% test coverage
+
+---
 
 ## 11. Risks & Mitigation
 
@@ -734,6 +825,8 @@ To provide doctors with an AI-powered voice assistant that:
 **Risk**: Unauthorized access
 - **Mitigation**: Strong authentication, JWT expiration, audit logging
 
+---
+
 ## 12. Future Enhancements
 
 ### Phase 2 (6-12 months)
@@ -757,32 +850,937 @@ To provide doctors with an AI-powered voice assistant that:
 - Research data aggregation
 - International expansion
 
-## 13. Glossary
+# SEVA Arogya - System Diagrams
 
-- **OPD**: Outpatient Department
-- **STT**: Speech-to-Text
-- **NLP**: Natural Language Processing
-- **JWT**: JSON Web Token
-- **EHR**: Electronic Health Record
-- **DISHA**: Digital Information Security in Healthcare Act (India)
-- **HIPAA**: Health Insurance Portability and Accountability Act (US)
-- **SOAP**: Subjective, Objective, Assessment, Plan (medical note format)
-- **RDS**: Relational Database Service (AWS)
-- **ECS**: Elastic Container Service (AWS)
-- **S3**: Simple Storage Service (AWS)
-- **VPC**: Virtual Private Cloud (AWS)
+## 1. System Architecture Diagram
 
-## 14. References
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           SEVA Arogya System                            │
+└─────────────────────────────────────────────────────────────────────────┘
 
-- [diagrams.md](diagrams.md) - System architecture and flow diagrams
-- [Readme.md](Readme.md) - System overview and technical details
-- [design.md](design.md) - Detailed system design document
-- AWS Transcribe Medical Documentation
-- AWS Comprehend Medical Documentation
-- DISHA Guidelines (when published)
+┌──────────────────────┐
+│   Doctor's Browser   │
+│   (React Web App)    │
+│                      │
+│  - Voice Recording   │
+│  - Prescription Form │
+│  - PDF Preview       │
+└──────────┬───────────┘
+           │ HTTPS
+           │ (JWT Token)
+           ▼
+┌──────────────────────┐
+│  Application Load    │
+│     Balancer         │
+│   (Port 443/HTTPS)   │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│              AWS ECS Fargate (Flask Backend)                 │
+│                                                              │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐              │
+│  │  Auth      │  │Transcription│  │ Suggestion │             │
+│  │  Module    │  │   Module    │  │   Engine   │             │
+│  └────────────┘  └────────────┘  └────────────┘              │
+│                                                              │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐              │
+│  │    NLP     │  │    PDF     │  │  Database  │              │
+│  │  Module    │  │ Generator  │  │   Access   │              │
+│  └────────────┘  └────────────┘  └────────────┘              │
+└──────────┬───────────────────────────────────┬────────────  ─┘
+           │                                   │
+           │                                   ▼
+           │                          ┌─────────────────┐
+           │                          │   AWS RDS       │
+           │                          │  (PostgreSQL)   │
+           │                          │                 │
+           │                          │ - Doctors       │
+           │                          │ - Prescriptions │
+           │                          │ - Medications   │
+           │                          └─────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    AWS AI Services                           │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐                  │
+│  │  AWS Transcribe  │  │ AWS Comprehend   │                  │
+│  │    Medical       │  │    Medical       │                  │
+│  │                  │  │                  │                  │
+│  │ - Speech to Text │  │ - Entity Extract │                  │
+│  │ - Medical Terms  │  │ - Medications    │                  │
+│  │ - Indian Accent  │  │ - Symptoms       │                  │
+│  └──────────────────┘  └──────────────────┘                  │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐                  │
+│  │  AWS Translate   │  │   AWS Cognito    │                  │
+│  │                  │  │                  │                  │
+│  │ - Multi-language │  │ - User Auth      │                  │
+│  │ - Hindi Support  │  │ - JWT Tokens     │                  │
+│  └──────────────────┘  └──────────────────┘                  │
+└──────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────┐
+│      AWS S3          │
+│                      │
+│ - Prescription PDFs  │
+│ - Static Assets      │
+└──────────────────────┘
+```
+
+
+## 2. Data Flow Diagram (DFD) - Level 0
+
+```
+                    ┌─────────────┐
+                    │   Doctor    │
+                    └──────┬──────┘
+                           │
+                           │ Voice Input + Patient Info
+                           ▼
+        ┌──────────────────────────────────────┐
+        │                                      │
+        │      SEVA Arogya System              │
+        │   (Voice-to-Prescription Platform)   │
+        │                                      │
+        └──────────────────┬───────────────────┘
+                           │
+                           │ Digital Prescription (PDF)
+                           ▼
+                    ┌─────────────┐
+                    │   Patient   │
+                    └─────────────┘
+```
+
+## 3. Data Flow Diagram (DFD) - Level 1
+
+```
+┌─────────┐
+│ Doctor  │
+└────┬────┘
+     │
+     │ 1. Audio Recording
+     ▼
+┌─────────────────────┐
+│  1.0 Capture Voice  │
+│     & Transcribe    │
+└─────────┬───────────┘
+          │
+          │ 2. Transcribed Text
+          ▼
+┌─────────────────────┐         ┌──────────────┐
+│  2.0 Structure &    │────────▶│  D1: Doctor │
+│  Extract Entities   │         │   Profiles   │
+└─────────┬───────────┘         └──────────────┘
+          │
+          │ 3. Structured Data
+          ▼
+┌─────────────────────┐         ┌──────────────┐
+│  3.0 Generate       │────────▶│ D2: Medicine │
+│    Suggestions      │◀────────│   Database   │
+└─────────┬───────────┘         └──────────────┘
+          │
+          │ 4. Suggestions + Structured Data
+          ▼
+┌─────────────────────┐
+│  4.0 Review &       │
+│     Finalize        │
+└─────────┬───────────┘
+          │
+          │ 5. Final Prescription Data
+          ▼
+┌─────────────────────┐         ┌──────────────┐
+│  5.0 Generate PDF   │────────▶│D3: Prescription
+│  & Store            │         │   Records    │
+└─────────┬───────────┘         └──────────────┘
+          │
+          │ 6. PDF Document
+          ▼
+     ┌─────────┐
+     │ Patient │
+     └─────────┘
+```
+
+
+## 4. Sequence Diagram - Complete Prescription Flow
+
+```
+Doctor    React App    ALB    Flask API    Cognito    Transcribe    Comprehend    RDS    S3
+  │           │         │         │           │            │             │         │     │
+  │──Login───▶│         │         │           │            │             │         │     │
+  │           │─────────┼────────▶│           │            │             │         │     │
+  │           │         │         │──Verify──▶│            │             │         │     │
+  │           │         │         │◀──JWT─────│            │             │         │     │
+  │           │◀────────┼─────────│           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+  │──Record──▶│         │         │           │            │             │         │     │
+  │  Voice    │         │         │           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+  │           │─Audio───┼────────▶│           │            │             │         │     │
+  │           │ +JWT    │         │           │            │             │         │     │
+  │           │         │         │──Audio───▶│            │             │         │     │
+  │           │         │         │           │──Process──▶│             │         │     │
+  │           │         │         │           │◀───Text────│             │         │     │
+  │           │         │         │◀──Text────│            │             │         │     │
+  │           │         │         │                        │             │         │     │
+  │           │         │         │────Text───────────────▶│             │         │     │
+  │           │         │         │◀──Entities─────────────│             │         │     │
+  │           │         │         │                        │             │         │     │
+  │           │         │         │──Query Suggestions────────────────────────────▶│     │
+  │           │         │         │◀──Past Data───────────────────────────────────│     │
+  │           │         │         │                        │             │         │     │
+  │           │◀────────┼─────────│           │            │             │         │     │
+  │           │ Structured Data   │           │            │             │         │     │
+  │◀─Display──│         │         │           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+  │──Edit &──▶│         │         │           │            │             │         │     │
+  │  Review   │         │         │           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+  │──Finalize─▶│         │         │           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+  │           │─Final───┼────────▶│           │            │             │         │     │
+  │           │  Data   │         │           │            │             │         │     │
+  │           │         │         │──Save────────────────────────────────────────▶│     │
+  │           │         │         │◀──Saved──────────────────────────────────────│     │
+  │           │         │         │                        │             │         │     │
+  │           │         │         │──Generate PDF─────────────────────────────────────▶│
+  │           │         │         │◀──PDF URL─────────────────────────────────────────│
+  │           │         │         │                        │             │         │     │
+  │           │◀────────┼─────────│           │            │             │         │     │
+  │◀──PDF─────│         │         │           │            │             │         │     │
+  │  Download │         │         │           │            │             │         │     │
+  │           │         │         │           │            │             │         │     │
+```
+
+
+## 5. Database Schema Diagram
+
+```
+┌─────────────────────────────────────────┐
+│              Doctors                    │
+├─────────────────────────────────────────┤
+│ PK  doctor_id         INT               │
+│     cognito_sub       VARCHAR(255)      │
+│     name              VARCHAR(255)      │
+│     email             VARCHAR(255)      │
+│     phone             VARCHAR(20)       │
+│     clinic_name       VARCHAR(255)      │
+│     qualifications    TEXT              │
+│     preferred_lang    VARCHAR(10)       │
+│     created_at        TIMESTAMP         │
+│     updated_at        TIMESTAMP         │
+└─────────────────────────────────────────┘
+                │
+                │ 1:N
+                ▼
+┌─────────────────────────────────────────┐
+│           Prescriptions                 │
+├─────────────────────────────────────────┤
+│ PK  prescription_id   INT               │
+│ FK  doctor_id         INT               │
+│     patient_name      VARCHAR(255)      │
+│     patient_age       INT               │
+│     patient_gender    VARCHAR(10)       │
+│     symptoms          TEXT              │
+│     vitals            TEXT              │
+│     diagnosis         TEXT              │
+│     instructions      TEXT              │
+│     language          VARCHAR(10)       │
+│     pdf_url           VARCHAR(500)      │
+│     created_at        TIMESTAMP         │
+└─────────────────────────────────────────┘
+                │
+                │ 1:N
+                ▼
+┌─────────────────────────────────────────┐
+│        Prescription_Medications         │
+├─────────────────────────────────────────┤
+│ PK  med_id            INT               │
+│ FK  prescription_id   INT               │
+│     medication_name   VARCHAR(255)      │
+│     dosage            VARCHAR(100)      │
+│     frequency         VARCHAR(100)      │
+│     duration          VARCHAR(100)      │
+│     instructions      TEXT              │
+│     created_at        TIMESTAMP         │
+└─────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────┐
+│        Medications_Master               │
+├─────────────────────────────────────────┤
+│ PK  medication_id     INT               │
+│     name              VARCHAR(255)      │
+│     generic_name      VARCHAR(255)      │
+│     category          VARCHAR(100)      │
+│     common_dosages    TEXT              │
+│     common_frequency  TEXT              │
+│     typical_duration  VARCHAR(100)      │
+│     created_at        TIMESTAMP         │
+└─────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────┐
+│            Audit_Logs                   │
+├─────────────────────────────────────────┤
+│ PK  log_id            INT               │
+│ FK  doctor_id         INT               │
+│     action            VARCHAR(100)      │
+│     details           TEXT              │
+│     ip_address        VARCHAR(50)       │
+│     timestamp         TIMESTAMP         │
+└─────────────────────────────────────────┘
+```
+
+
+## 6. AWS Infrastructure Diagram
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          AWS Cloud (ap-south-1)                        │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                    Public Subnet (AZ-1)                      │    │
+│  │                                                            │    │
+│  │  ┌────────────────────────────────────────────┐            │    │
+│  │  │   Application Load Balancer (ALB)          │            │    │
+│  │  │   - HTTPS (Port 443)                       │            │    │
+│  │  │   - SSL Certificate (ACM)                  │            │    │
+│  │  │   - Health Checks                          │            │    │
+│  │  └────────────────┬───────────────────────────┘            │    │
+│  └───────────────────┼────────────────────────────────────────┘    │
+│                      │                                              │
+│  ┌───────────────────┼────────────────────────────────────────┐    │
+│  │                   │   Private Subnet (AZ-1 & AZ-2)         │    │
+│  │                   ▼                                        │    │
+│  │  ┌─────────────────────────────────────────────────┐      │    │
+│  │  │      ECS Fargate Cluster                        │      │    │
+│  │  │                                                 │      │    │
+│  │  │  ┌──────────────┐      ┌──────────────┐       │      │    │
+│  │  │  │ Flask Task 1 │      │ Flask Task 2 │       │      │    │
+│  │  │  │ (Container)  │      │ (Container)  │       │      │    │
+│  │  │  └──────────────┘      └──────────────┘       │      │    │
+│  │  │                                                 │      │    │
+│  │  │  Auto-scaling: 2-10 tasks                      │      │    │
+│  │  └─────────────────┬───────────────────────────────┘      │    │
+│  │                    │                                      │    │
+│  │                    ▼                                      │    │
+│  │  ┌─────────────────────────────────────────────────┐      │    │
+│  │  │      Amazon RDS (PostgreSQL)                    │      │    │
+│  │  │      - Multi-AZ Deployment                      │      │    │
+│  │  │      - Encrypted at Rest                        │      │    │
+│  │  │      - Automated Backups                        │      │    │
+│  │  └─────────────────────────────────────────────────┘      │    │
+│  └───────────────────────────────────────────────────────────┘    │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                    AWS Managed Services                      │    │
+│  │                                                              │    │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │    │
+│  │  │   Cognito    │  │  Transcribe  │  │  Comprehend  │     │    │
+│  │  │  User Pool   │  │   Medical    │  │   Medical    │     │    │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘     │    │
+│  │                                                              │    │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │    │
+│  │  │  Translate   │  │      S3      │  │  CloudWatch  │     │    │
+│  │  │              │  │   Buckets    │  │    Logs      │     │    │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘     │    │
+│  │                                                              │    │
+│  │  ┌──────────────┐  ┌──────────────┐                        │    │
+│  │  │   Secrets    │  │     X-Ray    │                        │    │
+│  │  │   Manager    │  │   Tracing    │                        │    │
+│  │  └──────────────┘  └──────────────┘                        │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                    CI/CD Pipeline                            │    │
+│  │                                                              │    │
+│  │  GitHub Actions / CodePipeline                              │    │
+│  │  ├─ Build Docker Image                                      │    │
+│  │  ├─ Push to ECR                                             │    │
+│  │  ├─ Run Tests                                               │    │
+│  │  └─ Deploy to ECS                                           │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+## 7. Authentication Flow Diagram
+
+```
+┌─────────┐                                              ┌──────────────┐
+│ Doctor  │                                              │   Cognito    │
+│ Browser │                                              │  User Pool   │
+└────┬────┘                                              └──────┬───────┘
+     │                                                          │
+     │ 1. Navigate to App                                      │
+     ├──────────────────────────────────────────────────┐      │
+     │                                                  │      │
+     │ 2. Redirect to Login                             │      │
+     ├─────────────────────────────────────────────────▶│      │
+     │                                                  │      │
+     │ 3. Enter Credentials                             │      │
+     ├─────────────────────────────────────────────────▶│      │
+     │                                                  │      │
+     │                                                  │ 4. Validate
+     │                                                  │      │
+     │ 5. Return JWT Tokens                             │      │
+     │    (ID Token, Access Token, Refresh Token)       │      │
+     │◀─────────────────────────────────────────────────┤      │
+     │                                                  │      │
+     │ 6. Store Tokens (Memory/LocalStorage)            │      │
+     │                                                         │
+     │                                                         │
+     │ 7. API Request with JWT                                │
+     ├────────────────────────────────────────────────────────┼──────┐
+     │                                                         │      │
+     │                                              ┌──────────▼──────▼─┐
+     │                                              │   Flask Backend   │
+     │                                              │                   │
+     │                                              │ 8. Verify JWT     │
+     │                                              │    Signature      │
+     │                                              │                   │
+     │                                              │ 9. Check Expiry   │
+     │                                              │                   │
+     │ 10. Return Protected Resource                │ 11. Authorize     │
+     │◀─────────────────────────────────────────────┤     Request       │
+     │                                              └───────────────────┘
+     │
+     │
+     │ [Token Expires After 1 Hour]
+     │
+     │ 12. API Request with Expired Token
+     ├────────────────────────────────────────────────────────┐
+     │                                              ┌──────────▼────────┐
+     │                                              │  Flask Backend    │
+     │                                              │                   │
+     │ 13. Return 401 Unauthorized                  │ Token Expired     │
+     │◀─────────────────────────────────────────────┤                   │
+     │                                              └───────────────────┘
+     │
+     │ 14. Use Refresh Token                               │
+     ├─────────────────────────────────────────────────────▶│
+     │                                                       │
+     │ 15. Return New Access Token                          │
+     │◀──────────────────────────────────────────────────────┤
+     │                                                       │
+     │ 16. Retry API Request with New Token                 │
+     ├───────────────────────────────────────────────────────┼──────┐
+     │                                              ┌────────▼──────▼─┐
+     │                                              │  Flask Backend   │
+     │ 17. Success Response                         │                  │
+     │◀─────────────────────────────────────────────┤  Process Request │
+     │                                              └──────────────────┘
+     │
+```
+
+
+## 8. Voice Processing Flowchart
+
+```
+                    START
+                      │
+                      ▼
+            ┌─────────────────┐
+            │ Doctor Presses  │
+            │ Record Button   │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Capture Audio   │
+            │ via Microphone  │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Doctor Stops    │
+            │ Recording       │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Send Audio to   │
+            │ Backend API     │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ AWS Transcribe  │
+            │ Medical         │
+            │ (Speech-to-Text)│
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+         ┌──│ Transcription   │
+         │  │ Successful?     │
+         │  └────────┬────────┘
+         │           │
+         │ No        │ Yes
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ AWS Comprehend  │
+         │  │ Medical         │
+         │  │ (Entity Extract)│
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Extract:        │
+         │  │ - Symptoms      │
+         │  │ - Medications   │
+         │  │ - Dosages       │
+         │  │ - Diagnosis     │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Query Suggestion│
+         │  │ Engine          │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Generate        │
+         │  │ Suggestions     │
+         │  │ Based on:       │
+         │  │ - Context       │
+         │  │ - History       │
+         │  │ - Guidelines    │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Return to       │
+         │  │ Frontend:       │
+         │  │ - Transcript    │
+         │  │ - Entities      │
+         │  │ - Suggestions   │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Update UI with  │
+         │  │ Structured Data │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Doctor Reviews  │
+         │  │ & Edits         │
+         │  └────────┬────────┘
+         │           │
+         │           └──────────┐
+         │                      │
+         ▼                      ▼
+┌─────────────────┐    ┌─────────────────┐
+│ Show Error      │    │ Continue or     │
+│ Message         │    │ Finalize        │
+└────────┬────────┘    └────────┬────────┘
+         │                      │
+         │                      ▼
+         │             ┌─────────────────┐
+         │             │      END        │
+         │             └─────────────────┘
+         │
+         └──────────────▶ Retry Option
+```
+
+
+## 9. Prescription Generation Flowchart
+
+```
+                    START
+                      │
+                      ▼
+            ┌─────────────────┐
+            │ Doctor Clicks   │
+            │ "Finalize"      │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+         ┌──│ All Required    │
+         │  │ Fields Present? │
+         │  └────────┬────────┘
+         │           │
+         │ No        │ Yes
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Compile         │
+         │  │ Prescription    │
+         │  │ Data            │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Check Output    │
+         │  │ Language        │
+         │  └────────┬────────┘
+         │           │
+         │           ├─────────────┐
+         │           │             │
+         │      English         Hindi/Other
+         │           │             │
+         │           │             ▼
+         │           │    ┌─────────────────┐
+         │           │    │ AWS Translate   │
+         │           │    │ Instructions &  │
+         │           │    │ Diagnosis       │
+         │           │    └────────┬────────┘
+         │           │             │
+         │           └─────────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Save to RDS:    │
+         │           │ - Prescription  │
+         │           │ - Medications   │
+         │           └────────┬────────┘
+         │                    │
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Generate PDF    │
+         │           │ Using Template: │
+         │           │ - Header        │
+         │           │ - Patient Info  │
+         │           │ - Symptoms      │
+         │           │ - Diagnosis     │
+         │           │ - Medications   │
+         │           │ - Instructions  │
+         │           │ - Footer        │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Upload PDF to   │
+         │           │ S3 Bucket       │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Update RDS with │
+         │           │ PDF URL         │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Return PDF to   │
+         │           │ Frontend        │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Display PDF     │
+         │           │ Download/Print  │
+         │           │ Options         │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │           ┌─────────────────┐
+         │           │ Update          │
+         │           │ Suggestion      │
+         │           │ Engine History  │
+         │           └────────┬────────┘
+         │                    │
+         │                    ▼
+         │                   END
+         │
+         ▼
+┌─────────────────┐
+│ Show Validation │
+│ Error Message   │
+└────────┬────────┘
+         │
+         └──────────▶ Return to Form
+```
+
+
+## 10. Component Interaction Diagram
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                         React Frontend                             │
+│                                                                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   Login      │  │   Voice      │  │ Prescription │           │
+│  │  Component   │  │  Recorder    │  │    Form      │           │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+│         │                 │                  │                    │
+│         └─────────────────┼──────────────────┘                    │
+│                           │                                       │
+│                  ┌────────▼────────┐                              │
+│                  │  State Manager  │                              │
+│                  │ (Redux/Context) │                              │
+│                  └────────┬────────┘                              │
+│                           │                                       │
+│                  ┌────────▼────────┐                              │
+│                  │   API Service   │                              │
+│                  │   (Axios/Fetch) │                              │
+│                  └────────┬────────┘                              │
+└───────────────────────────┼────────────────────────────────────────┘
+                            │ HTTPS + JWT
+                            │
+┌───────────────────────────▼────────────────────────────────────────┐
+│                      Flask Backend API                             │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │                  Middleware Layer                        │    │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐        │    │
+│  │  │    CORS    │  │    JWT     │  │   Error    │        │    │
+│  │  │  Handler   │  │ Validator  │  │  Handler   │        │    │
+│  │  └────────────┘  └────────────┘  └────────────┘        │    │
+│  └──────────────────────────────────────────────────────────┘    │
+│                           │                                       │
+│  ┌────────────────────────┼──────────────────────────────┐       │
+│  │              API Routes & Controllers                 │       │
+│  │                        │                              │       │
+│  │  ┌──────────┐  ┌──────▼─────┐  ┌──────────┐         │       │
+│  │  │  /auth   │  │/transcribe │  │/prescriptions│      │       │
+│  │  └──────────┘  └──────┬─────┘  └──────────┘         │       │
+│  └─────────────────────────┼──────────────────────────────┘       │
+│                            │                                      │
+│  ┌─────────────────────────┼──────────────────────────────┐       │
+│  │           Service Layer │                              │       │
+│  │                         │                              │       │
+│  │  ┌──────────┐  ┌────────▼────┐  ┌──────────────┐     │       │
+│  │  │   Auth   │  │Transcription│  │     NLP      │     │       │
+│  │  │ Service  │  │   Service   │  │   Service    │     │       │
+│  │  └──────────┘  └────────┬────┘  └──────┬───────┘     │       │
+│  │                         │               │             │       │
+│  │  ┌──────────┐  ┌────────▼────┐  ┌──────▼───────┐     │       │
+│  │  │Suggestion│  │     PDF     │  │   Database   │     │       │
+│  │  │  Engine  │  │  Generator  │  │    Access    │     │       │
+│  │  └──────────┘  └─────────────┘  └──────────────┘     │       │
+│  └──────────────────────────────────────────────────────┘       │
+│                            │                                      │
+└────────────────────────────┼──────────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+┌───────────────┐  ┌──────────────────┐  ┌──────────────┐
+│  AWS Cognito  │  │   AWS Services   │  │   AWS RDS    │
+│               │  │                  │  │ (PostgreSQL) │
+│ - User Pool   │  │ - Transcribe     │  │              │
+│ - JWT Tokens  │  │ - Comprehend     │  │ - Doctors    │
+│               │  │ - Translate      │  │ - Rx Data    │
+└───────────────┘  └──────────────────┘  └──────────────┘
+                             │
+                             ▼
+                    ┌──────────────┐
+                    │   AWS S3     │
+                    │              │
+                    │ - PDF Files  │
+                    └──────────────┘
+```
+
+
+## 11. Network Security Architecture
+
+```
+                        Internet
+                           │
+                           │ HTTPS (443)
+                           ▼
+                  ┌─────────────────┐
+                  │   AWS WAF       │
+                  │ (Optional)      │
+                  └────────┬────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────────┐
+│                          │           VPC                    │
+│                          │                                  │
+│  ┌───────────────────────▼──────────────────────────┐      │
+│  │              Public Subnet                       │      │
+│  │                                                  │      │
+│  │  ┌────────────────────────────────────────┐     │      │
+│  │  │  Application Load Balancer             │     │      │
+│  │  │  Security Group: ALB-SG                │     │      │
+│  │  │  Inbound: 443 from 0.0.0.0/0           │     │      │
+│  │  │  Outbound: 5000 to ECS-SG              │     │      │
+│  │  └────────────────┬───────────────────────┘     │      │
+│  └───────────────────┼───────────────────────────────┘      │
+│                      │                                      │
+│  ┌───────────────────▼───────────────────────────────┐      │
+│  │           Private Subnet (AZ-1)                   │      │
+│  │                                                   │      │
+│  │  ┌─────────────────────────────────────────┐     │      │
+│  │  │  ECS Fargate Tasks                      │     │      │
+│  │  │  Security Group: ECS-SG                 │     │      │
+│  │  │  Inbound: 5000 from ALB-SG              │     │      │
+│  │  │  Outbound: 5432 to RDS-SG               │     │      │
+│  │  │  Outbound: 443 to Internet (NAT)        │     │      │
+│  │  └────────────────┬────────────────────────┘     │      │
+│  └───────────────────┼───────────────────────────────┘      │
+│                      │                                      │
+│  ┌───────────────────▼───────────────────────────────┐      │
+│  │           Private Subnet (AZ-2)                   │      │
+│  │                                                   │      │
+│  │  ┌─────────────────────────────────────────┐     │      │
+│  │  │  Amazon RDS (PostgreSQL)                │     │      │
+│  │  │  Security Group: RDS-SG                 │     │      │
+│  │  │  Inbound: 5432 from ECS-SG              │     │      │
+│  │  │  Outbound: None                         │     │      │
+│  │  └─────────────────────────────────────────┘     │      │
+│  └───────────────────────────────────────────────────┘      │
+│                                                             │
+│  ┌──────────────────────────────────────────────────┐      │
+│  │              NAT Gateway                         │      │
+│  │  (For ECS to access AWS Services)                │      │
+│  └──────────────────────────────────────────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+
+## 12. Suggestion Engine Logic Flow
+
+```
+                    START
+                      │
+                      ▼
+            ┌─────────────────┐
+            │ Receive Context │
+            │ - Diagnosis     │
+            │ - Symptoms      │
+            │ - Patient Info  │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Query Doctor's  │
+            │ Past Rx History │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+         ┌──│ Similar Cases   │
+         │  │ Found?          │
+         │  └────────┬────────┘
+         │           │
+         │ No        │ Yes
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Extract Common  │
+         │  │ Medications &   │
+         │  │ Patterns        │
+         │  └────────┬────────┘
+         │           │
+         │           ▼
+         │  ┌─────────────────┐
+         │  │ Calculate       │
+         │  │ Frequency &     │
+         │  │ Confidence      │
+         │  └────────┬────────┘
+         │           │
+         │           └──────────┐
+         │                      │
+         ▼                      ▼
+┌─────────────────┐    ┌─────────────────┐
+│ Query Standard  │    │ Rank Suggestions│
+│ Treatment       │    │ by Confidence   │
+│ Guidelines DB   │    └────────┬────────┘
+└────────┬────────┘             │
+         │                      │
+         └──────────────────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Apply Filters:  │
+            │ - Allergies     │
+            │ - Interactions  │
+            │ - Contraindic.  │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Format Output:  │
+            │ - Med Name      │
+            │ - Dosage        │
+            │ - Frequency     │
+            │ - Duration      │
+            │ - Instructions  │
+            └────────┬────────┘
+                     │
+                     ▼
+            ┌─────────────────┐
+            │ Return Top 3-5  │
+            │ Suggestions     │
+            └────────┬────────┘
+                     │
+                     ▼
+                    END
+```
+
+
+
+---
+
+## 14. Glossary
+
+- **OPD**: Outpatient Department - clinic setting where patients visit for consultation
+- **STT**: Speech-to-Text - technology that converts spoken words to written text
+- **NLP**: Natural Language Processing - AI technology for understanding human language
+- **JWT**: JSON Web Token - secure method for transmitting information between parties
+- **EHR**: Electronic Health Record - digital version of patient medical records
+- **EMR**: Electronic Medical Record - similar to EHR, focused on clinical data
+- **DISHA**: Digital Information Security in Healthcare Act (India) - healthcare data regulation
+- **HIPAA**: Health Insurance Portability and Accountability Act (US) - healthcare privacy law
+- **SOAP**: Subjective, Objective, Assessment, Plan - medical note format
+- **RDS**: Relational Database Service (AWS) - managed database service
+- **ECS**: Elastic Container Service (AWS) - container orchestration service
+- **Fargate**: AWS serverless compute engine for containers
+- **S3**: Simple Storage Service (AWS) - object storage service
+- **VPC**: Virtual Private Cloud (AWS) - isolated cloud network
+- **ALB**: Application Load Balancer - distributes incoming traffic
+- **ACM**: AWS Certificate Manager - manages SSL/TLS certificates
+- **IAM**: Identity and Access Management - AWS security service
+- **KMS**: Key Management Service - encryption key management
+- **Multi-AZ**: Multiple Availability Zones - high availability deployment
+- **CI/CD**: Continuous Integration/Continuous Deployment - automated software delivery
+- **API**: Application Programming Interface - software communication protocol
+- **PDF**: Portable Document Format - standardized document format
+- **HTTPS**: Hypertext Transfer Protocol Secure - encrypted web communication
+- **TLS**: Transport Layer Security - cryptographic protocol
+- **SQL**: Structured Query Language - database query language
+- **ORM**: Object-Relational Mapping - database abstraction layer
+- **REST**: Representational State Transfer - API architectural style
+- **JSON**: JavaScript Object Notation - data interchange format
+- **CORS**: Cross-Origin Resource Sharing - web security mechanism
+- **XSS**: Cross-Site Scripting - security vulnerability
+- **CSRF**: Cross-Site Request Forgery - security vulnerability
+- **MFA**: Multi-Factor Authentication - enhanced security method
+- **OTP**: One-Time Password - temporary authentication code
+- **PWA**: Progressive Web App - web app with native-like features
+- **CDN**: Content Delivery Network - distributed content delivery
+- **NAT**: Network Address Translation - IP address mapping
+- **WSGI**: Web Server Gateway Interface - Python web server standard
+- **SDK**: Software Development Kit - development tools package
 
 ---
 
 **Document Version**: 2.0  
 **Last Updated**: 2026-02-11  
-**Status**: Approved for Development
+**Status**: Approved for Development  
+**Next Review**: 2026-03-11
+
+---
+
+## Document Navigation
+
+This is the complete requirements and planning document for SEVA Arogya. For detailed technical design and implementation details, refer to **design.md**.
+
+### Quick Links
+- Section 1-2: Overview and Architecture
+- Section 3: Core Features (detailed requirements)
+- Section 5: Non-Functional Requirements (performance, security, etc.)
+- Section 6: Technical Requirements (stack and infrastructure)
+- Section 7-8: User Stories and Acceptance Criteria
+- Section 13: Visual Diagrams (all system diagrams)
+- Section 14: Glossary (terminology reference)
