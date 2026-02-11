@@ -683,7 +683,7 @@ To provide doctors with an AI-powered voice assistant that:
 **Risk**: Regulatory changes
 - **Mitigation**: Modular architecture, compliance monitoring, legal consultation
 
-### 11.3 Security Risks
+### 9.3 Security Risks
 
 **Risk**: Data breach
 - **Mitigation**: Encryption, access controls, security audits, penetration testing
@@ -693,7 +693,7 @@ To provide doctors with an AI-powered voice assistant that:
 
 ---
 
-## 12. Future Enhancements
+## 10. Future Enhancements
 
 ### Phase 2 (6-12 months)
 - Patient record management
