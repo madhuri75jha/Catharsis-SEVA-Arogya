@@ -1,65 +1,16 @@
-# SEVA Arogya - System Design & Implementation Document
+# SEVA Arogya - System Design Document
 
-**Version**: 2.0  
-**Last Updated**: 2026-02-11  
-**Status**: Approved for Implementation
-
----
-
-## Table of Contents
-
-1. [Executive Summary](#1-executive-summary)
-2. [System Architecture](#2-system-architecture)
-3. [Technology Stack](#3-technology-stack)
-4. [Component Design](#4-component-design)
-5. [Data Architecture](#5-data-architecture)
-6. [API Design](#6-api-design)
-7. [Security Architecture](#7-security-architecture)
-8. [Infrastructure Design](#8-infrastructure-design)
-9. [Integration Design](#9-integration-design)
-10. [Deployment Strategy](#10-deployment-strategy)
-11. [Performance Optimization](#11-performance-optimization)
-12. [Testing Strategy](#12-testing-strategy)
-13. [Monitoring & Operations](#13-monitoring--operations)
-14. [Development Guidelines](#14-development-guidelines)
+**Version**: 2.0 | **Last Updated**: 2026-02-11 | **Status**: Approved for Implementation
 
 ---
 
 ## 1. Executive Summary
 
-### 1.1 System Overview
+SEVA Arogya is a cloud-native voice-enabled prescription system built on AWS infrastructure. It transforms doctor-patient consultations into structured, professional prescriptions using AI/ML services for speech recognition and natural language processing.
 
-SEVA Arogya is a cloud-native, voice-enabled clinical prescription system built on AWS infrastructure. The system leverages AI/ML services for speech recognition and natural language processing to transform doctor-patient consultations into structured, professional prescriptions.
+**Design Principles**: Modularity, horizontal scalability (50-500+ users), defense-in-depth security, 99.5% uptime, sub-2-second transcription, and clear separation of concerns.
 
-### 1.2 Design Principles
-
-**Modularity**: Loosely coupled components for independent scaling and updates  
-**Scalability**: Horizontal scaling capability from 50 to 500+ concurrent users  
-**Security**: Defense-in-depth with encryption, authentication, and audit logging  
-**Reliability**: 99.5% uptime with multi-AZ deployment and graceful degradation  
-**Performance**: Sub-2-second transcription and sub-300ms UI response times  
-**Maintainability**: Clear separation of concerns and comprehensive documentation
-
-### 1.3 Architecture Style
-
-- **Frontend**: Single-Page Application (SPA) with React
-- **Backend**: RESTful API with microservices-oriented design
-- **Infrastructure**: Serverless containers (AWS Fargate)
-- **Data**: Relational database with document storage
-- **Integration**: Event-driven with synchronous API calls
-
-### 1.4 Key Technical Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Cloud Provider | AWS | Comprehensive AI services, Indian region availability |
-| Frontend Framework | React | Component-based, large ecosystem, performance |
-| Backend Framework | Flask (Python) | Lightweight, AWS SDK support, rapid development |
-| Database | PostgreSQL (RDS) | ACID compliance, JSON support, managed service |
-| Container Platform | ECS Fargate | Serverless, auto-scaling, no server management |
-| Authentication | AWS Cognito | Managed service, JWT tokens, MFA support |
-| STT Engine | AWS Transcribe Medical | Medical vocabulary, Indian accent support |
-| NLP Engine | AWS Comprehend Medical | Entity extraction, medical ontology |
+**Architecture Style**: React SPA frontend, Flask RESTful API backend, serverless containers (AWS Fargate), PostgreSQL database, and event-driven integration.
 
 ---
 
@@ -67,504 +18,248 @@ SEVA Arogya is a cloud-native, voice-enabled clinical prescription system built 
 
 ### 2.1 High-Level Architecture
 
-```
-┌─────────────┐
-│   Doctor    │
-│  (Browser)  │
-└──────┬──────┘
-       │ HTTPS
-       ▼
-┌─────────────────────────────────────────┐
-│         Presentation Layer              │
-│  React SPA + State Management           │
-└──────┬──────────────────────────────────┘
-       │ REST API (JWT)
-       ▼
-┌─────────────────────────────────────────┐
-│      Application Load Balancer          │
-│  SSL Termination + Health Checks        │
-└──────┬──────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│        Application Layer                │
-│  Flask API (ECS Fargate)                │
-│  - Auth Service                         │
-│  - Transcription Service                │
-│  - NLP Service                          │
-│  - Suggestion Engine                    │
-│  - PDF Generator                        │
-└──────┬──────────────────────────────────┘
-       │
-       ├──────────────┬──────────────┐
-       ▼              ▼              ▼
-┌──────────┐   ┌──────────┐   ┌──────────┐
-│ AWS AI   │   │   RDS    │   │   S3     │
-│ Services │   │PostgreSQL│   │  PDFs    │
-└──────────┘   └──────────┘   └──────────┘
-```
-
-### 2.2 Architectural Layers
-
-#### 2.2.1 Presentation Layer (Frontend)
-- **Technology**: React 18+ with TypeScript
-- **Responsibilities**:
-  - User interface rendering
-  - Voice recording and audio capture
-  - State management (Redux/Context)
-  - API communication
-  - Client-side validation
-  - PDF preview and download
-
-#### 2.2.2 API Gateway Layer
-- **Technology**: AWS Application Load Balancer
-- **Responsibilities**:
-  - SSL/TLS termination
-  - Request routing
-  - Health checking
-  - Load distribution
-  - DDoS protection
-
-#### 2.2.3 Application Layer (Backend)
-- **Technology**: Flask (Python) on ECS Fargate
-- **Responsibilities**:
-  - Business logic execution
-  - Authentication and authorization
-  - Request validation
-  - Service orchestration
-  - Error handling
-  - Logging and monitoring
-
-#### 2.2.4 Data Layer
-- **Technologies**: AWS RDS (PostgreSQL), AWS S3
-- **Responsibilities**:
-  - Persistent data storage
-  - Data integrity and consistency
-  - Backup and recovery
-  - Query optimization
-
-#### 2.2.5 Integration Layer
-- **Technologies**: AWS SDK (Boto3), REST APIs
-- **Responsibilities**:
-  - External service integration
-  - API rate limiting
-  - Retry logic
-  - Circuit breaking
-
-# SEVA Arogya Requirements
-
-## Feature Breakdown
-
-### Core Features
-
-- **Voice-to-text clinical note capture (High Priority):** Allow doctors to narrate clinical notes and findings via voice. The system transcribes speech to text in real-time, tuned for medical terminology and Indian accents.
-- **Automatic note structuring (High Priority):** Convert transcribed free-text into structured prescription elements. The system identifies and categorizes inputs into sections like _Symptoms/Complaints, Vitals, Diagnosis, Medications (with dosage & duration), and Instructions_.
-- **Smart suggestion engine (High Priority):** Provide context-aware suggestions for medications or care instructions. Suggestions are based on learned doctor preferences and standard treatment guidelines, aiding doctors with auto-complete options (e.g., common dosages, follow-up advice).
-- **Multi-language output (Medium Priority):** Support generating the prescription in multiple languages (English and local vernacular, e.g., Hindi). Ensures prescriptions can be understood by patients in their preferred language while maintaining medical accuracy.
-- **Secure doctor login & profile (High Priority):** Implement a secure authentication system for doctors. Each doctor has a profile (name, qualifications, clinic details) and preferences (preferred language, frequently used medications templates) that personalize the experience and appear on prescriptions.
-- **Standardized digital prescription (High Priority):** Output a well-formatted, legible prescription document (PDF or print) with a standard layout. The prescription includes all necessary sections, is easily readable (no handwriting issues), and can be printed or shared electronically.
-
-### Nice-to-have Features
-
-- **Voice commands & macros (Low Priority):** Enable voice-based commands (e.g., "next line", "new prescription") and reusable macros/templates for common text (like a predefined set of instructions or follow-up plan) to speed up note-taking.
-- **Patient record integration (Future Scope):** Ability to pull in or store basic patient data (name, age, past history) and retrieve past prescriptions for a patient. Useful for follow-up visits and continuity of care.
-- **Ambient conversation capture (Future Scope):** An _ambient mode_ that listens to the entire doctor-patient conversation (with consent) and auto-generates a summary or SOAP note. This is a more advanced, continuous transcription feature beyond short-burst dictation.
-- **EHR/Clinic system integration (Future Scope):** APIs or data export to integrate with hospital EMR systems. For example, pushing the structured prescription or notes into the hospital's electronic health record or billing system.
-- **Regulatory compliance features (Future Scope):** Alignment with health data regulations (e.g., DISHA in India, HIPAA in future). This could include patient consent management, advanced audit trails, and data anonymization features for research use of aggregated data.
+The system follows a 5-layer architecture:
 
-## Functional Requirements
+1. **Presentation Layer**: React 18+ SPA with TypeScript, Redux state management, and Web Audio API for voice capture
+2. **API Gateway Layer**: AWS Application Load Balancer handling SSL termination, routing, and health checks
+3. **Application Layer**: Flask (Python) on ECS Fargate with auth, transcription, NLP, suggestion engine, and PDF generation services
+4. **Data Layer**: AWS RDS (PostgreSQL) for structured data and S3 for PDF storage
+5. **Integration Layer**: AWS SDK (Boto3) for external service integration with retry logic and circuit breaking
 
-**Voice Capture & Transcription:** - The system _shall_ capture audio from the doctor via the device microphone and convert it to text in near real-time. It must handle medical vocabulary (drug names, symptoms, common medical abbreviations) and diverse Indian English accents (as well as Hindi or other language input if spoken). - The transcription _shall_ be streamed or returned quickly (within a couple of seconds for a sentence). If transcription confidence is low for certain words, the system should mark them (e.g., underline or color) for the doctor to review.
+### 2.2 Key Components
 
-**Automated Note Structuring:** - The system _shall_ analyze transcribed text to identify and extract key elements: - Patient information (name, age, etc.) if provided verbally. - Clinical complaints/symptoms and their duration. - Vital signs or examination findings (e.g., "BP 120/80, heart rate 80 bpm"). - Diagnoses or assessments stated by the doctor. - Medications prescribed, including dosage, frequency, and duration. - Additional instructions or advice (e.g., lifestyle advice, next visit schedule). - The system _shall_ populate a digital prescription template with these extracted elements into predefined fields. Unrecognized or miscellaneous information can be placed in a "Notes" section for manual review.
+**Frontend Components**:
+- VoiceRecorder: Manages microphone access and audio recording
+- PrescriptionForm: Handles structured fields and user edits
+- SuggestionPanel: Displays medication recommendations
+- AuthProvider: Manages JWT tokens and authentication state
 
-**Editing and Confirmation:** - The doctor _shall_ be able to edit any transcribed text or structured field manually in the user interface. (For example, if a dosage or diagnosis is misheard, they can correct it.) - The system _shall_ update suggestions and structuring in real-time as text is edited or new voice input is added, without losing prior inputs. - Before finalizing, the doctor _shall_ be presented with a complete, structured prescription view to review and confirm that all details are correct.
+**Backend Services**:
+- Authentication Service: Cognito integration and JWT validation
+- Transcription Service: AWS Transcribe Medical interface
+- NLP Service: AWS Comprehend Medical for entity extraction
+- Suggestion Engine: Context-aware medication recommendations
+- PDF Service: Template-based prescription generation
+- Translation Service: AWS Translate for multi-language support
 
-**Smart Suggestions:** - Based on the context of what's been transcribed (e.g., a diagnosed condition or mentioned symptom), the system _shall_ offer non-intrusive suggestions: - **Medications:** e.g., if "acid reflux" is diagnosed, suggest an antacid or proton-pump inhibitor commonly used by the doctor or generally recommended. - **Dosages & Frequency:** e.g., if "Paracetamol" is prescribed, suggest "500 mg twice a day for 3 days" if that's a typical regimen. - **Instructions:** e.g., for an antibiotic, suggest "Take after food and complete the full course". - Suggestions _shall_ be presented in the UI in a way that the doctor can easily accept (one click to add) or ignore them. The system should learn from what the doctor does (e.g., if suggestions are frequently adjusted, adapt next time). - The system _shall_ allow the doctor to override or manually input anything-suggestions are aids but not forced. There should be no automatic addition without user confirmation.
+---
 
-**Multi-Language Output:** - The system _shall_ support producing the final prescription in English and at least one regional language (initially Hindi). The doctor can choose the output language (per prescription or as a profile default). - If a regional language is chosen, the system _shall_ translate the structured content (like the symptom descriptions and instructions) into that language's script, **while** keeping medical terms (drug names, etc.) consistent (not erroneously translated). - The interface for the doctor can remain in English (for now) even if output is translated, but future enhancement may allow the doctor to dictate or see the interface in vernacular language as well.
+## 3. Technology Stack
 
-**User Authentication & Profile Management:** - The system _shall_ require doctors to create an account and log in securely before accessing patient prescription features. Account creation includes capturing essential details (name, email/phone, professional ID or registration number, clinic/hospital name). - Passwords _shall_ be stored securely (hashed); the system should enforce strong passwords or support OTP-based login if feasible. Multi-factor authentication is a nice-to-have for added security, but not required in MVP. - Each doctor _shall_ have a profile where they can: - Set their preferred prescription language. - Configure header info that appears on prescriptions (like their qualifications, clinic address, signature). - View or edit lists of "favorite" or frequently used medications/instructions to further customize suggestions. - The system _shall_ only allow authenticated users (doctors) to access their own data. There is no public or patient-facing login in this phase.
+| Layer | Technology | Rationale |
+|-------|-----------|-----------|
+| Frontend | React 18+ + TypeScript | Component-based, type safety, large ecosystem |
+| Backend | Flask (Python 3.11+) | Lightweight, AWS SDK support, rapid development |
+| Database | PostgreSQL 13+ (RDS) | ACID compliance, JSON support, managed service |
+| Container | Docker + ECS Fargate | Serverless, auto-scaling, no server management |
+| Auth | AWS Cognito | Managed service, JWT tokens, MFA support |
+| STT | AWS Transcribe Medical | Medical vocabulary, Indian accent support |
+| NLP | AWS Comprehend Medical | Entity extraction, medical ontology |
+| Translation | AWS Translate | Hindi support, custom terminology |
+| Storage | AWS S3 | PDF storage, static hosting, 99.999999999% durability |
+| Monitoring | CloudWatch + X-Ray | Logs, metrics, distributed tracing |
 
-**Prescription Output & Sharing:** - Upon confirmation, the system _shall_ generate a final prescription document (PDF format) that the doctor can download or print. It should follow a standard layout: - Header with clinic and doctor info, date, patient name (if provided). - Clearly labeled sections for _Findings/Complaints_, _Diagnosis_, _Medications_ (with dosage & duration), and _Instructions/Advice_. - Footer with any disclaimers or follow-up info. - The PDF _shall_ be properly formatted for A4 paper (common prescription print size in clinics). If content is too long, it should gracefully span multiple pages while repeating necessary headers. - The system _shall_ provide an option to directly print the prescription or save it. If internet connectivity allows, a share option (e.g., email to patient or WhatsApp link) is a nice-to-have, but not core in MVP. - A copy of the prescription data _shall_ be saved in the system (database) under the doctor's account for future reference or audit.
+---
 
-**Non-Functional Requirements:**
+## 4. Data Architecture
 
-_Performance:_ - The system _shall_ be optimized for low latency. Transcription of a typical sentence (5-10 seconds of speech) should be returned and displayed in under **2 seconds** on average on a good connection. UI interactions (like clicking buttons, loading the app) should feel responsive (< 300ms for any local action). - The end-to-end process from dictation to final PDF generation should be fast enough to fit within a standard short consultation (~2-3 minutes for note-taking). The system should not introduce significant delays in a fast-paced OPD workflow. - The system _shall_ scale to handle ~50 concurrent active users (doctors dictating) initially, with design considerations to easily scale to hundreds of concurrent users as adoption grows. Adding more users should linearly scale the backend and not degrade individual performance.
+### 4.1 Database Schema
 
-_Reliability & Availability:_ - The system _shall_ be highly available during clinic hours. Target uptime is 99.5% or higher, especially during 9am-6pm typical OPD times. Maintenance or updates should be scheduled off-hours or with zero-downtime deployment strategies. - In case of a failure (e.g., the transcription service is unreachable, or the backend crashes), the system should fail gracefully: - The UI should show an error message with guidance (e.g., "Unable to transcribe at the moment, please retry" or fallback to manual typing). - Partial data should not be lost if possible - e.g., keep already transcribed text visible if a later step fails. - The system _shall_ ensure data durability for saved prescriptions (using reliable storage). Once a prescription is saved or printed, it should be retrievable later (no data loss).
+**Core Tables**:
+- `doctors`: User profiles (doctor_id, cognito_sub, name, email, clinic_name, preferred_language)
+- `prescriptions`: Prescription records (prescription_id, doctor_id, patient_info, symptoms, diagnosis, instructions, pdf_url)
+- `prescription_medications`: Medication details (med_id, prescription_id, medication_name, dosage, frequency, duration)
+- `medications_master`: Reference data for suggestions
+- `audit_logs`: Security audit trail (log_id, doctor_id, action, timestamp, ip_address)
 
-_Security:_ - All communication _shall_ be encrypted (HTTPS for all API calls). Users' credentials and tokens must never be sent or stored in plaintext. - The system _shall_ enforce access controls such that one doctor cannot access another doctor's prescriptions or data. Each API request will be authenticated and scoped to the requesting user's context. - Sensitive personal health information (PHI) is minimal in this system (mainly what's on a prescription), but whatever is stored (patient name, diagnoses, medications) _shall_ be encrypted at rest in the database and in backups. - The system _shall_ log access and key actions (audit log) for security monitoring. For example, log when a user logs in, when a prescription is created, or if any data export occurs. - Initial compliance with Indian IT security best practices and anticipation of future healthcare regulations is expected. While not fully HIPAA/DISHA compliant in MVP, the architecture should allow retrofitting compliance (e.g., consent capture, detailed audit trails, data retention policies) with minimal redesign.
+**Relationships**: doctors (1:N) prescriptions (1:N) prescription_medications
 
-_Usability:_ - The application _shall_ have an intuitive UI/UX tailored for doctors who may not be very tech-savvy: - Minimal clicks: e.g., one tap to start/stop recording voice. - Clear visualization of structured fields (maybe form-like or sections) so doctors can quickly verify auto-filled content. - Legible fonts and adequate text sizes on the prescription preview. - Support for quick corrections: editing text should be as simple as typing, with no complex steps. - The interface _shall_ be responsive to different device types (desktop in clinics, tablets, possibly mobile phones in future). However, primary target is a desktop or laptop with Chrome/Firefox browsers. - The system _shall_ provide feedback to the user during processing (like a spinner or progress bar during transcription) so the doctor knows the system is working and not stuck.
+**Indexes**: doctor_id + created_at for fast prescription retrieval
 
-_Maintainability & Extensibility:_ - The codebase _shall_ be organized into clearly separated modules (front-end, back-end API, voice processing, suggestion engine, etc.). This modularity makes it easier to update one component (like swap out the STT engine or update the suggestion algorithm) without affecting others. - The system _should_ allow updating the medical vocabulary or adding new templates without a full redeploy (for example, via configuration files or database entries). For instance, adding a new common medication name should be possible via updating a list rather than changing code. - Documentation _shall_ be maintained for the system's API and data models, enabling new developers to understand and contribute with minimal onboarding time. (We plan to keep design.md updated alongside changes.) - The system _should_ have automated tests for critical components (transcription parsing, suggestion logic, etc.) to facilitate safe refactoring and updates. This ensures maintainers catch regressions early. - Extensibility: Adding new languages or integrating new services (like a different speech recognition API or EHR integration) should be feasible by adding new modules or adapters rather than rewriting core logic.
+### 4.2 Data Security
 
-_Scalability:_ - The design _shall_ be cloud-native to allow horizontal scaling. For example, multiple instances of the transcription-processing service can run in parallel to serve more users. There should be no single bottleneck that limits throughput (stateful components are minimized). - The architecture _should_ use managed services (where possible) that automatically scale (e.g., AWS's auto-scaling for containers, fully managed databases that handle load). This reduces the need for manual intervention when usage spikes. - For future scale, the system _should_ support multi-clinic or multi-institution deployments. Initially one environment will serve all users, but design decisions (like unique identifiers, tenancy isolation) should allow partitioning data by clinic or region if needed.
+- **At Rest**: RDS AES-256 encryption, S3 SSE-S3 encryption
+- **In Transit**: TLS 1.2+ for all connections, HTTPS only
+- **Access Control**: Row-level filtering by doctor_id, IAM roles for service access
 
-_Cost Constraints:_ - The solution _shall_ be cost-effective to operate for a small clinic setting. Using pay-per-use services (like paying per transcription minute) is acceptable in trade for zero upfront infrastructure, but costs need monitoring. There should be options to configure limits (e.g., maximum transcription time per user per month) to control expenses in early deployments. - Development effort should focus on core differentiators (the voice and AI features) while relying on existing platforms for commodity features (auth, DB). This ensures we deliver value quickly without reinventing the wheel. - As usage grows, the team should regularly review the AWS resource usage and see if any optimizations or reserved instances make sense to reduce ongoing costs. The architecture should allow substituting expensive components if needed (for instance, switch to an open-source speech model on our servers if that becomes cheaper at scale). - There is an implicit cost in data usage as well (bandwidth for audio upload/download). The system should be mindful of that by sending only necessary data (e.g., compress audio, avoid sending audio at an extremely high bitrate).
+---
 
-## User Stories
+## 5. API Design
 
-**Primary User - Doctor:** 1. _As a busy doctor in an OPD, I want to quickly record patient findings and prescriptions by speaking, so that I spend less time writing and maintain eye contact with my patient._  
-**Acceptance Criteria:** After speaking a sentence, the text appears on my screen correctly. I can do this in front of the patient naturally, and it doesn't slow me down compared to writing. 2. _As a doctor, I want the system to automatically organize my spoken notes into a neat prescription format, so that I don't have to manually structure or rewrite anything before handing it to the patient._  
-**Acceptance Criteria:** When I finish dictating, the prescription fields (like diagnosis, medications) are automatically filled in appropriately. The final document looks professional without my manual formatting. 3. _As a doctor, I want the assistant to suggest common medications or doses based on what I've said, so that I save time and don't forget standard care practices._  
-**Acceptance Criteria:** If I diagnose a common condition (e.g., hypertension), the system shows me a couple of medication options or guidelines (like typical drugs/dosages) which I can accept with one click. The suggestions are relevant and help me complete the prescription faster. 4. _As a doctor concerned about errors, I want to review and edit the output easily, so that I remain in control of the final prescription content and ensure 100% accuracy._  
-**Acceptance Criteria:** I can click on any part of the generated text to correct it (for example, fix a misspelled drug name or adjust a dose). The system updates the final prescription immediately with my changes and doesn't revert them. 5. _As a multilingual doctor, I want to give some patients a prescription in their local language (e.g., Hindi), so that they can read and understand it better._  
-**Acceptance Criteria:** I can select "Hindi" as output language, and the prescription (except drug names) appears in Hindi script accurately. If I switch back to English, it toggles back. The patient section (like instructions) is clearly understandable in the chosen language. 6. _As a doctor, I want my prescription outputs to look uniform and clear, with my letterhead and date, so that they have a professional appearance and can be easily referenced later._  
-**Acceptance Criteria:** The PDF output includes my pre-set letterhead information (name, clinic, etc.) at the top, the date of visit, and is formatted cleanly (easy to read font, proper alignment). When I print it, it fits on one page and looks like a standard prescription format.
-
-**Secondary/Future Stories:** 7. _As a patient receiving the prescription, I want it to be typed and clearly printed, possibly in my language, so that I can follow the instructions correctly and not worry about misreading the doctor's handwriting._  
-**Acceptance Criteria:** (From the patient perspective) The prescription I get is easy to read. If it's in English and I'm not comfortable, the doctor can give it in my language. Key details like medicine names and timing are unambiguous. 8. _As a clinic admin or IT support, I want to ensure the doctors' data and patient info are secure and backed up, so that we comply with guidelines and can recover information if needed._  
-**Acceptance Criteria:** There is a secure login for each doctor; if a doctor leaves, their account can be deactivated. All prescription records are stored securely. In case of any audit or medicolegal need, an authorized person can retrieve a log of what was prescribed, when, and by whom (with proper permission). 9. _As a future product owner, I want to easily update the system's drug database or add new features, so that the product stays up-to-date with medical advancements and user needs._  
-**Acceptance Criteria:** (From development perspective) The system's architecture and documentation make it straightforward to expand (e.g., adding a new language pack or integrating a new AI model). Changes in features are reflected in the requirements and design docs, and there's an automated process or clear guidelines to do so.
-
-## Acceptance Criteria
-
-**Voice Transcription:** - _Accuracy:_ For a given test set of medical phrases and prescriptions dictated by a doctor, the transcription service should correctly transcribe **at least 90% of the words** overall. Critical medical terms (drug names, symptom names) should be nearly perfect (e.g., >98% for a known list of common terms). Any uncertain words should be flagged to draw the doctor's attention. - _Speed:_ In usability tests, doctors should observe the transcribed text appear within ~2 seconds after finishing a sentence. (We measure from end of speech audio to text displayed.) The system should handle at least **20 short dictations per minute** for a single user without queue delays (since a doctor might dictate multiple short sentences quickly). - _Robustness:_ If background noise or accent causes a transcription error, the system should still capture some output rather than failing silently. It might mis-recognize a word, but it should never drop the entire sentence. In cases of low confidence, it could display a "?" or highlight to indicate the need for verification. - _Medical terminology:_ When tested with a list of 100 common medications and medical terms (especially India-specific ones), the system should transcribe at least 95 of them correctly in context. (e.g., "Paracetamol", "Metformin", "Blood pressure", common units like "mg/ml", etc., are handled correctly by the voice engine.)
-
-**Structured Data Extraction:** - _Field Population:_ Given a complex sentence or sequence (e.g., "Patient has fever for 3 days and cough. On exam, temp 101F. Impression: viral fever. Plan: Tab Paracetamol 500 mg twice daily for 3 days."), the system should fill: - Symptoms: "fever (3 days)", "cough" - Vitals: "Temperature 101°F" - Diagnosis: "Viral fever" - Medications: "Paracetamol 500 mg - 1 tablet twice daily - 3 days" - Instructions: (none explicitly in example, but if absent, section can be blank or omitted) - Patient Name: (left blank if not provided; not inferable from this input) - _Accuracy of Extraction:_ In a controlled test of 10 sample prescriptions dictated, at least 9 should have all key fields correctly identified and placed. Minor mistakes (like categorizing something as instruction vs medication note) are acceptable if easily fixable by the doctor, but critical info (medication name, dose) must consistently land in the right field. - _Handling Unknowns:_ If the system cannot confidently categorize a piece of info, it should place it in a general note section or prompt the user. Acceptance if, in edge cases, no information is lost-everything the doctor said is somewhere on the draft prescription (even if not perfectly classified, the doctor can see it and adjust). - _Manual Override:_ Verify that if a doctor edits the structured fields manually, the system does not re-overwrite those with its own suggestions. For example, if the doctor changes the dosage from what was auto-filled, the change persists. The acceptance test: doctor edits a field and continues dictation; the previously edited field remains as edited unless the doctor explicitly changes it again.
-
-**Suggestion Engine:** - _Relevance:_ In at least 8 out of 10 test scenarios, the suggestions offered must be contextually relevant. (Test scenarios example: for "Type 2 Diabetes" diagnosis, suggestions include common diabetes meds like Metformin or dietary advice; for "fever", suggestion might be Paracetamol if not already given, etc.) If a suggestion appears that is clearly unrelated to the case, that's a fail. - _Non-intrusive UI:_ During a user test, doctors report that the suggestions are helpful and _not_ annoying. Acceptance if the suggestion interface (maybe a dropdown or small list) does not obstruct the doctor's view and can be ignored without additional clicks. For instance, if the doctor chooses to ignore them, they can just continue without dismissing popups. - _Adapting to Doctor:_ If a doctor repeatedly prefers a certain medication for a condition (e.g., always prescribes Drug A for hypertension instead of the suggested Drug B), the system should learn this. After, say, 5 such occurrences, acceptance criteria is that Drug A becomes the first suggestion next time that condition is encountered. We can simulate this by feeding multiple similar inputs and checking the suggestion order. - _Opt-out:_ Ensure that turning off suggestions (if a feature toggle exists) indeed stops showing suggestions. Acceptance: when a "Suggestions" setting is off, the same dictation input yields no suggestions in the UI, only the raw transcription and structuring.
-
-**Prescription Document Output:** - _Completeness:_ Every structured field that has data should appear in the PDF. For example, if "Follow-up after 7 days" was an instruction, it should be present in the printed instructions section. Acceptance: Cross-verify with test data that nothing captured is missing on the PDF. - _Format Consistency:_ The PDF layout should match a predefined template. Acceptance: a review of the PDF output shows consistent fonts, spacing, and section headers. If two different doctors use it, their outputs differ only in content and header (each doctor's name/clinic), but the style remains uniform (unless customized). - _Legibility:_ The printed prescription must be easily readable: - Font size >= 11pt for body text. - Important fields labeled (e.g., "Diagnosis:" in bold followed by the text). - Medication entries formatted clearly (one per line or in a table with columns for dosage and duration). In user feedback, at least 90% of doctors and test patients should agree the printout is clear and professional. - _Language Accuracy:_ If a prescription is output in Hindi (or another language), have a bilingual expert confirm that the translation of instructions and common terms is correct and patient-friendly. Acceptance: In a sample of 5 prescriptions translated to Hindi, the medical content remains correct (no mistranslation of critical terms) and the grammar/spelling in Hindi is correct in at least 4 out of 5. Any errors identified are added to a glossary to prevent future mistakes (continuous improvement). - _File Delivery:_ Generating the PDF should not take more than a couple of seconds. When tested on a sample prescription, the system produces the PDF and initiates download < 3 seconds after clicking "Finalize". The PDF file size should be reasonable (e.g., <200KB for a one-page prescription without images). Printing the PDF on a standard printer yields the expected result (sections not cut off, margins correct).
-
-**Authentication & Security:** - _Account Creation:_ New user registration with valid details results in an account and immediate ability to use the system (if email verification is required, we'll simulate a verified state for testing). Attempting to register with an already used email or weak password is gracefully handled (error message given). Acceptance if validation messages appear for invalid inputs and a new user can successfully sign up and log in. - _Login:_ Using the correct credentials lets the user in (token issued, interface accessible). Using wrong credentials (wrong password) shows an appropriate error and does not log them in. After 5 failed attempts, if we have a lockout policy, it triggers (nice-to-have). Acceptance: test login with correct and incorrect credentials, behavior is as expected; ensure no information leakage in error (e.g., don't say "user not found vs wrong password" differently). - _Auth Token Usage:_ After login, the user's session token (JWT) must be required for accessing APIs. Test by calling an API endpoint (like transcription) without a token or with an invalid token - the result should be a 401 Unauthorized error. Acceptance if the system rejects unauthorized calls and allows authorized ones. Also, ensure that a valid token from one user cannot access another user's data (simulate by substituting an ID in an endpoint if any are exposed in URLs, or by using another user's token). - _Data Isolation:_ Create two test doctor accounts. Doctor A creates a prescription. Doctor B (with their credentials/token) tries to fetch or view anything of Doctor A (if such API exists, or by ID guessing). Acceptance: Doctor B is denied access or gets no data of A. Essentially, verify that each doctor's records are scoped to their identity. - _Encryption & Privacy:_ Verify that the database entries for sensitive fields (like patient name, prescription details) are stored encrypted (this might be a configuration - for example, RDS encryption at rest is on, which we assume in design). Also verify that any cached files (if any) are cleared or stored securely. This might be more of a design check than runtime test; acceptance is a checklist verification that all storage is configured to be encrypted and no sensitive data is written to logs in plaintext. - _Logout:_ Logging out in the UI should remove the session. After logout, using the same token should fail. Acceptance: After a logout action, attempt an API call with the old token results in a 401 (if token was revoked or just expired). If using short-lived tokens without explicit revocation, ensure that after, say, 1 hour, the token naturally expires and can't be used (and the front-end requires a fresh login).
-
-**Performance & Load Testing:** - _Concurrent Usage:_ Simulate 20 doctors using the system simultaneously (20 audio transcriptions nearly at the same time). All should receive responses within acceptable latency (maybe it goes from 2s to 3s under load, which might be okay). Acceptance if the system remains responsive and no requests time out or fail under this load. Further test at 50 concurrent to evaluate headroom (this might be for future scaling criteria). - _Throughput:_ Over an hour of heavy usage (e.g., 100 prescriptions created in an hour by various test scripts), the system should not crash or leak resources (memory/CPU within container limits). Acceptance via monitoring: no memory leaks observed, CPU stays within reasonable % (e.g., < 70% on average under peak), and the auto-scaling (if enabled) kicks in appropriately to handle load. - _Recovery:_ Manually simulate a failure scenario, such as the connection to the speech service failing mid-request or the database going down briefly. The system should handle it (perhaps by retrying or returning a graceful error). Acceptance if, for instance, when Transcribe is unreachable, the doctor sees a clear error message and can retry after a short while, and the system resumes normal operation once the service is back. Also test restarting the backend container in the middle of usage: the load balancer should route to a healthy instance and the user might just have to retry their last action, without a total system downtime. - _Monitoring & Alerts:_ Although not directly user-facing, verify that the monitoring system is recording key metrics. For example, intentionally produce an error (like call an endpoint with bad data to force an exception) and verify an error log is recorded. If possible, verify an alert would trigger (maybe by simulating high latency). Acceptance: developers/operators can see the metrics dashboards and logs for those events, confirming that the monitoring is in place as designed.
-
-# SEVA Arogya System Design
-
-## Architectural Overview
-
-SEVA Arogya is designed as a cloud-based, low-latency application that leverages managed services to achieve scalability and reliability. The system follows a modular client-server architecture: - **Frontend:** A web application (React) that handles user interaction, voice recording, and displays structured prescription content. - **Backend:** A RESTful API (Python Flask) running in Docker containers, responsible for processing voice, structuring data, suggesting content, and generating prescriptions. - **External AI Services:** AWS services (Transcribe Medical, Comprehend Medical, Translate) are used for speech recognition, natural language processing, and translation, to avoid building these complex components from scratch. - **Data Storage:** Persistent data is stored securely using AWS cloud services (RDS for relational data, S3 for documents). AWS Cognito handles user authentication and identity management. - **Infrastructure:** The application is deployed on AWS ECS Fargate with an Application Load Balancer, ensuring easy scaling and no server management. CI/CD and automation are set up to maintain code quality and sync documentation with development.
-
-This design prioritizes **speed** (real-time transcription), **accuracy** (medical-domain optimizations), **security** (patient data protection), and **extensibility** (ability to add features like new languages or integrations later). We choose AWS managed components wherever possible to reduce operational overhead and focus on core application logic.
-
-## Tech Stack and Key Decisions
-
-- **Backend Framework:** **Flask (Python)** in a Docker container.  
-    _Rationale:_ Flask is lightweight and easy to develop REST APIs with. Python's ecosystem offers strong libraries for machine learning and NLP, which is beneficial for parsing medical text if we augment AWS services. Containerizing the app ensures consistency across development, testing, and production. Python/Flask is a good fit for quick prototyping of logic like text processing, and can handle the expected load with proper scaling (each Flask instance can handle multiple concurrent requests behind a load balancer).
-- **Frontend Framework:** **React (JavaScript)** single-page application.  
-    _Rationale:_ React allows us to create a dynamic, responsive UI that can handle real-time updates (like streaming text, suggestion pop-ups) smoothly. It has a rich ecosystem for state management (Redux or Context API) which will help manage the complex state of the form (voice input, structured fields, edits). Additionally, React can be built and deployed as static files (served from S3/CloudFront or via Flask), making deployment flexible. Using a modern web app ensures cross-device compatibility (just need a browser) without installing native apps initially.
-- **Speech-to-Text Engine:** **Amazon Transcribe Medical (AWS)**.  
-    _Rationale:_ Amazon Transcribe Medical is a cloud service specialized for medical speech recognition, including support for medical vocabulary and (importantly) Indian English accent and possibly Hindi (if not, we might constrain voice input to English initially). Offloading STT to AWS ensures high accuracy out-of-the-box and reduces development time. It also scales automatically to multiple concurrent transcription sessions. Alternative considered: Google Cloud STT or offline models like Vosk; but tight AWS integration and known medical tuning tipped the decision to Transcribe Medical.
-- **NLP for Structuring:** **Amazon Comprehend Medical** and custom rules.  
-    _Rationale:_ Amazon Comprehend Medical can identify medical entities (symptoms, medications, anatomy, test results) from unstructured text. Using it means we get a baseline of structured data extraction without developing a full NLP pipeline from scratch. We will likely combine Comprehend's output with some custom logic (for example, Comprehend might identify a drug name and dosage, but we need to map that into our prescription fields explicitly). If Comprehend Medical lacks support for local language input or certain Indian context, we have the flexibility to integrate a custom parser or add vocabulary. The system can fall back to a simpler keyword-based extraction for unsupported cases or use translation (e.g., transcribe Hindi speech to text, then translate to English for Comprehend to parse).
-- **Suggestions Engine:** **Custom Python module (ML/Rule-based)** within the backend.  
-    _Rationale:_ Suggestions need to be tailored per doctor and evolve over time. We design this as a separate service layer in the backend that can start simple (rule-based suggestions from a dictionary of conditions-to-medications, and user's own history) and later incorporate machine learning (like collaborative filtering or a small neural model that recommends based on context and past data). Keeping it custom allows using the doctor's data (which we store) in a controlled way. Initially, we might not use an AWS service for this because it's quite specific (Amazon does not provide a "prescription suggestion" API out-of-the-box). Instead, we may leverage a local database of drugs and some logic. This module is loosely coupled so it could call external APIs or models in the future if needed (for example, a cloud service that provides clinical decision support).
-- **Database:** **Amazon RDS - PostgreSQL.**  
-    _Rationale:_ We need to store structured data like prescriptions, user profiles, and potentially a list of medications or usage statistics. A relational database fits well because:
-  - Prescriptions can be represented with relations (Doctor table, Prescription table, Medication entries table etc.), enabling SQL queries (e.g., count how many times a drug was prescribed, retrieve all prescriptions of a patient if we add that feature, etc.).
-  - PostgreSQL is reliable, widely used, and has support for JSON fields if we need semi-structured data.
-  - Amazon RDS is managed, so backups, replication, failover are handled by AWS, aligning with our low-ops approach. We can start with a small instance and scale vertically or horizontally (read replicas) as needed.
-  - Security group settings and VPC placement will ensure the DB is not exposed publicly, only accessed by the app.
-- **File Storage:** **Amazon S3 (Simple Storage Service).**  
-    _Rationale:_ S3 will be used to store generated prescription PDFs and possibly any uploaded content (if in future doctors attach images or if we decide to save audio files for audit). S3 provides virtually infinite storage, high durability, and easy integration for downloading files. For example, after generating a PDF, we can either return it directly or store it in S3 and give the client a pre-signed URL for download. S3 is also useful for hosting the front-end (React build) as a static website, which can be served via a CDN. It's cost-effective and simplifies file management compared to storing files in the DB.
-- **Authentication & User Management:** **Amazon Cognito.**  
-    _Rationale:_ Cognito User Pools offer a ready-to-use, secure authentication service supporting features like sign-up, email/phone verification, multi-factor auth, and JWT token issuance. This saves us from implementing our own user authentication logic (which is error-prone and time-consuming to secure). Cognito can integrate with our front-end through SDK or OAuth flows, and the backend can validate Cognito's tokens to secure API endpoints. It also allows easy management of user attributes (we can store some profile info in Cognito or just an ID to reference our DB). This choice also positions us well for scaling (Cognito can handle large numbers of users) and compliance (Cognito has advanced security features we can opt into).
-- **Deployment Platform:** **AWS ECS Fargate (Docker containers).**  
-    _Rationale:_ Fargate is a serverless container platform, meaning we don't manage EC2 instances or OS patches. We define our container (with Flask and possibly Gunicorn for concurrency) and ECS will run it as tasks. It can auto-scale the number of task instances based on CPU/Mem usage or request rates (possible integration with Application Load Balancer request count). This fits our requirement to handle variable load and scale to zero (or a minimal level) when idle to save cost. We also considered AWS Lambda for the backend (serverless functions). While Lambda could work for short tasks (transcription requests), the overall app has multiple endpoints and would benefit from in-memory caching between requests (e.g., keep a loaded suggestion model or an initialized connection to DB). A container service gives us more flexibility in that regard. Fargate also easily sits behind an ALB to expose a stable HTTPS endpoint.
-- **API Gateway vs ALB:** We chose to use an **Application Load Balancer (ALB)** for routing to the Flask service instead of API Gateway.  
-    _Rationale:_ Since we are already using Fargate (ECS), an ALB is the straightforward way to distribute traffic to the container tasks. ALB supports path-based routing, health checks, and TLS termination. API Gateway is more often used for Lambda or microservices; it adds features like request validation, rate limiting, etc., but for our use case, ALB + Flask is sufficient and simpler. We will implement any needed request validation in Flask or via a middleware. ALB also allows WebSocket or streaming support if we need it later for real-time transcription.
-- **PDF Generation:** **Python library (e.g., ReportLab or WeasyPrint)** inside the Flask app.  
-    _Rationale:_ Generating a PDF on the fly when a prescription is finalized keeps the flow simple (no extra service needed). Python has libraries to create PDFs or even HTML-to-PDF converters which can style a document easily. We'll likely create a template (maybe using an HTML/CSS template for the prescription layout) and render it with patient/doctor data. WeasyPrint (HTML to PDF) or ReportLab (drawing PDF with Python) are potential choices. This approach means the PDF bytes are produced in-memory and can be returned to the client or stored. It also means if we want to change the format or add a logo, we just adjust the template and code accordingly.
-- **Translation:** **Amazon Translate** for multi-language support.  
-    _Rationale:_ To generate prescriptions in local languages, we can leverage Amazon Translate for translating the structured text (like instructions or diagnoses). It supports Hindi and many other languages. While medical context translation might not be perfect, we can combine it with a curated dictionary approach. For example, we might translate general sentences but ensure certain terms remain unchanged or use a custom glossary (AWS Translate allows custom terminology lists). This is far easier than building our own translation engine. Alternatively, if we find translation quality issues, we could implement a simpler approach: maintain a bilingual dictionary for common phrases (like "twice daily" -> "दिन में दो बार") and just substitute those, but that covers only limited cases. Using Amazon Translate gives broad coverage with minimal dev effort, and we can improve it iteratively.
-- **Infrastructure as Code:** **AWS CloudFormation or Terraform** (planned in infra/ directory).  
-    _Rationale:_ We want a reproducible deployment. Using IaC means we can version control the AWS resource setup. We'll likely define resources like ECS Task Definition, Service, ALB, RDS, S3 buckets, Cognito user pool, etc., in code form. This also makes environment creation (dev/staging/prod) easier and reduces manual configuration errors. For now, it might be partly manual or using AWS console for initial prototype, but moving to IaC is intended as the project grows.
-- **CI/CD Pipeline:** **GitHub Actions or AWS CodePipeline** for continuous integration and deployment.  
-    _Rationale:_ Automating build, test, and deploy steps ensures we can deliver updates quickly and reliably. A pipeline will lint the code (using Black, Flake8 for Python and ESLint for JS), run tests, build the Docker image, and deploy to a Fargate service (or update tasks). We favor GitHub Actions due to ease of integration with GitHub repo, but CodePipeline is also an option (especially if we want to keep everything on AWS). This pipeline will also be configured to generate/update documentation if certain changes are detected (see Agent Hooks section).
-- **Monitoring & Logging:** **AWS CloudWatch & X-Ray.**  
-    _Rationale:_ CloudWatch will aggregate logs from the Flask app (via log drivers) and can track metrics like number of requests, latency, memory/CPU of containers, etc. We will set up CloudWatch Alarms for critical conditions (e.g., high error rate or high latency in transcriptions). Additionally, we may use AWS X-Ray to trace requests through our application, especially if we want insight into performance of external calls (Transcribe API call duration, etc.). This helps identify bottlenecks (for example, if transcription is slow, or if DB queries are taking time). Monitoring is vital for a production clinical tool to ensure it's performing as expected.
-- **Security & Secrets:** **AWS Secrets Manager and IAM.**  
-    _Rationale:_ We will store sensitive configuration like database credentials or API keys (if any external) in Secrets Manager. The Flask app can retrieve these at startup (with proper IAM permissions). This avoids hardcoding secrets in code or config files. IAM roles will be used extensively to grant least-privilege access:
-- The ECS task running our backend gets an IAM role permitting it to call only specific AWS services (Transcribe, Comprehend, Translate, S3 on certain bucket, etc.).
-- The Cognito user pool will manage user auth, but if needed, an Identity Pool could grant temporary AWS credentials to front-end for direct S3 access (not likely needed for this app, except maybe if we allow direct S3 upload of audio or download of PDF).
-- By using IAM roles and not embedding AWS creds, we enhance security (nothing sensitive on the client or in code).
-- **Region and Localization:** We will deploy initially in an AWS region in India (such as **ap-south-1 (Mumbai)**) to keep latency low for Indian users and to ensure data residency in India.  
-    _Rationale:_ Placing resources in Mumbai region reduces round-trip time for API calls (especially since audio data streaming can be sensitive to latency). Also, keeping health data in-country aligns with anticipated regulatory preferences (DISHA likely will encourage local storage of health data). We'll verify that the AWS services we need (Transcribe Medical, Comprehend Medical) are available in Mumbai; if not, we might use another closest region (Singapore) with careful consideration of latency and data compliance.
-
-## System Architecture Description
-
-The SEVA Arogya system can be visualized as a set of interconnected components and services:
-
-- **Web Client (React App):**  
-    Runs in the doctor's browser. It provides:
-- **Login Interface:** where doctors authenticate via Cognito (could be an embedded form or redirect to Cognito-hosted UI).
-- **Voice Recording Module:** using the Web Audio API. The UI has a record button which, when pressed, starts capturing audio (possibly showing a waveform or listening indicator) and when released (or toggled off), stops and prepares the audio for upload.
-- **Dynamic Prescription Form:** as the doctor speaks, transcribed text and identified fields appear here. This form is essentially the digital equivalent of a prescription pad, with sections for each type of information. The doctor can also type in it.
-- **Suggestions Dropdowns:** for fields like medication, when the system has suggestions, the UI might show a dropdown or autocomplete list.
-- **Preview & Finalize View:** a preview of the prescription in the final formatted style. The doctor can review and then confirm to finalize.
-- **Networking:** the app communicates with the backend via HTTPS calls (using fetch or Axios). It handles responses for transcription, suggestions, and can fetch or post data for any saved info.
-- **State Management:** likely uses local state or context to keep track of the current prescription data structure (symptoms list, medications list etc.), updating it as results come in or user edits occur.
-- **Mobile/Tablet Consideration:** (Though not a separate component, note that the web app is responsive and can run on a tablet for portability in clinic. We might package it as a PWA in future so that it can work more seamlessly on mobile devices with microphone access.)
-- **Authentication & Authorization:**  
-    **Amazon Cognito** manages user authentication. We set up:
-- A **Cognito User Pool** for doctors with fields (username, email, etc.). It handles user sign-up (with verification email/SMS if configured), login, and can enforce password policies.
-- Cognito provides a hosted authentication flow or tokens for custom UI. In our case, we likely use the Cognito JavaScript SDK to sign in and obtain a **JWT access token**.
-- The React app then includes this JWT in the Authorization header for API calls to our backend.
-- The backend has a middleware or filter that validates incoming JWTs (by checking signature against Cognito's public keys and ensuring token not expired and correct audience). We can use a library or AWS provided middleware for JWT verification.
-- Once validated, the backend knows the user's identity (their Cognito user id or email). We map that to our internal user records (we may use Cognito's user id as primary key or store a separate user table in RDS linked via email/username).
-- **Authorization**: At this stage, our app is single-tenant per doctor (each doctor only accesses their own data). So authorization is mainly ensuring the user is authenticated and then scoping DB queries to that user. There isn't a role hierarchy now (like admin vs user), except possibly in future for an admin user to see usage stats.
-- **API Backend (Flask Application):**  
-    The Flask app exposes various REST endpoints (all secured with auth). It's stateless (does not store session data on server side; relies on JWT for user context). Key endpoints and internal flows:
-- POST /transcribe - Accepts audio data. Upon call:
-  - The Flask handler receives the audio file (likely as part of form-data or binary stream).
-  - It verifies the JWT, identifies the user (e.g., user_id).
-  - It calls the Amazon Transcribe Medical API. For short audio, it could use the synchronous API:
-  - This might involve uploading the audio to S3 and calling a transcription job, or directly sending the raw bytes to a Transcribe endpoint. (Amazon Transcribe has a streaming API that could be invoked via WebSocket, but for simplicity we might do: save audio to a temp file or memory and call a Transcribe job).
-  - If using streaming, the Flask app itself might manage the stream to AWS and gather the result.
-  - Once transcription is obtained (text + maybe confidence metadata), the Flask app may optionally call Comprehend Medical to parse it. Alternatively, we might delay parsing until we accumulate more context. But real-time feel suggests doing it per snippet.
-  - The Flask app returns a JSON response like { "text": "...", "entities": \[...\] } or directly structured data.
-- POST /analyze (optional) - If we separate steps, this could take raw text and return structured data and suggestions. However, combining into /transcribe might be more efficient (transcribe then analyze immediately).
-- GET /suggest?context=x or part of analyze response - Returns suggestions for the current context (like current diagnosis or partial med input). Could also be that suggestions are included in /analyze output to reduce calls.
-- POST /prescriptions - Save or finalize prescription:
-  - Expects a JSON of the structured prescription (patient info, list of meds, etc.) from the front-end when the doctor clicks finalize.
-  - The backend will create a record in the database (Prescription table, Medications sub-table etc.), linking it with the user's ID.
-  - It then generates a PDF. If quick, it can generate on the fly and send back the PDF bytes in the response (with appropriate headers for download). Alternatively, it could save the PDF to S3 and respond with a link or an ID that front-end can use to fetch from another endpoint.
-  - Possibly also returns a confirmation or any additional info (like "prescription saved with ID 123").
-- GET /prescriptions?date=... or /prescriptions/{id} (nice-to-have) - If doctors can view past prescriptions, these endpoints would retrieve data. Not a priority now, but we design DB with that in mind.
-- PUT /profile and GET /profile - to update or fetch doctor's profile settings (like preferred language, etc.). On sign-up, some profile info is set; they can change it later (e.g., change default language to Hindi or upload a signature image if we allow that).
-- **Internal Structure:** Within the Flask app, we might organize code into blueprints or modules:
-  - auth.py (maybe not needed if using pure Cognito JWT, but might have utility methods for auth).
-  - transcription.py (functions to call Transcribe API).
-  - nlp.py (functions to call Comprehend or do parsing).
-  - suggestion.py (logic for suggestions).
-  - pdf.py (template or PDF generation code).
-  - models.py or DB access layer (SQLAlchemy models or plain SQL queries).
-  - We can use SQLAlchemy as an ORM for ease of interacting with PostgreSQL, or use raw queries for simplicity. SQLAlchemy would map to tables: Doctor, Prescription, Medication, etc., and allow Pythonic queries.
-  - The app will use a connection pool to RDS to efficiently reuse DB connections (Flask with gunicorn could have multiple worker processes, each might maintain a few connections).
-- **Error Handling:** The API will consistently return structured errors. For example, if Transcribe fails, it might return JSON { "error": "Transcription failed, please retry." } with a 500 status. The front-end will handle these gracefully. We'll also ensure that exceptions are caught so that a bug doesn't crash the whole container; instead, it's logged and an error response is given.
-- **AWS Transcribe (Medical):**  
-    This is an external service, but integral to our flow:
-- We configure Transcribe for our use via AWS SDK (boto3). For medical transcription, we specify the domain (medical) and the language (e.g., en-IN for English (Indian) medical, if available).
-- If using the real-time streaming, the Flask app might maintain an open connection. However, given the "short bursts" approach, we likely use non-streaming. AWS provides a StartTranscriptionJob API for longer files (which is async and can take up to real-time length to complete, which might be too slow) or a streaming API for low-latency.
-- For MVP, an alternative is to use the standard Transcribe (non-medical) if medical is not available in region or language, and supplement with a custom vocabulary of medical terms. But ideally, we use the medical flavor as it's tuned for this use case.
-- The output of Transcribe includes text and possibly punctuation. We might handle punctuation insertion if needed (some medical STT output might not heavily punctuate).
-- We do not permanently store the raw audio on our side (unless we choose to save for analysis). The audio is sent to Transcribe and we get text. If privacy is a concern, we will mention in policy that audio is processed by AWS. AWS typically doesn't store the audio after processing unless for their service improvement (which can be opted out).
-- **AWS Comprehend Medical (NLP):**  
-    Usage in our system:
-- Input: the transcribed text of one segment or the whole compiled text. We need to decide if we call Comprehend on each segment or only when finalizing. Possibly each time the doctor pauses, we run Comprehend on the new text snippet to highlight entities and suggestions in near real-time.
-- Comprehend Medical returns entities with types (MEDICATION, DOSAGE, SYMPTOM, etc.), and also relationship info (it might link a dosage to a medication name, etc.). We will parse this result to fill our data structure.
-- For example, if the text is "Tab Paracetamol 500 mg twice daily for 5 days", Comprehend might return:
-  - MEDICATION name: "Paracetamol"
-  - DOSAGE: "500 mg"
-  - FREQUENCY: "twice daily"
-  - DURATION: "5 days" These would be linked, indicating one medication entry. Our code will take those and create a Medication object.
-- Another example: "Patient complains of headache and nausea." might return two SYMPTOM entities "headache", "nausea". We put those in Symptoms list.
-- If Comprehend mis-labels something (like treats something as a symptom which is actually a diagnosis), we may refine via simple rules or allow user to correct it.
-- Not all output from Comprehend is needed; we might ignore less relevant entity types or map them accordingly.
-- For languages: Comprehend Medical at present mainly supports English. So if the doctor speaks in Hindi, one strategy is to use AWS Transcribe (Hindi) to get text, then use a translation (Hindi->English), then Comprehend on English, then translate output back to Hindi if needed for display. This is a bit complex and may reduce accuracy. As an MVP, we might restrict dictation to English (which many Indian doctors use for medical terms) and only translate the final output for patients.
-- **AWS Translate (for output):**  
-    When the doctor requests the prescription in a different language:
-- We gather the structured text that needs translation. We will not translate certain fields like drug names or numerical values.
-- We call Amazon Translate for each text field or a concatenated block of text. For example, translate the "Instructions" paragraph to Hindi.
-- We can provide a custom terminology to Translate to ensure certain terms remain in English or are replaced with desired translations (e.g., ensure "mg" remains "mg", or translate "once daily" to a specific Hindi phrase consistently).
-- The translated text is then placed into the PDF template instead of the English text.
-- We likely let the doctor review the translated version on screen as well (since the doctor might know both languages and can verify nothing got garbled, although in most cases it should be fine).
-- If translation fails (e.g., network issue), we fall back to English as a safe default and possibly notify the user.
-- **Database (AWS RDS - Postgres) Schema Design:**  
-    We propose a schema roughly as:
-- **Doctors**: (doctor_id PK, name, email, password_hash if not using Cognito for password, or Cognito_sub, preferred_language, clinic_name, etc.). If using Cognito, we might store minimal info here and rely on Cognito for auth; but we will at least store doctor_id to link to prescriptions.
-- **Prescriptions**: (prescription_id PK, doctor_id FK, patient_name, patient_age, date, diagnosis_text, instructions_text, language, created_at timestamp, etc.). For simplicity, store the main textual parts in this table.
-- **Prescription_Meds**: (prescription_id FK, med_name, dosage, frequency, duration, additional_note). One row per medication in a prescription. This way, queries like "how many times drug X was prescribed by doctor Y" become easy.
-- Optionally **Symptoms** or **Findings** table: but we could just store a combined string or JSON of symptoms in the prescription table since it's mainly for display.
-- **Medications Master**: (med_name PK, perhaps mapping to generic name or category). This could be a reference list of common medications for suggestions and validation. We can populate it with an initial set of drugs relevant to the specialties in focus.
-- **Suggestions or History**: We might not need a separate table initially; the system can derive suggestions from past prescriptions (which are in Prescription_Meds) filtering by diagnosis or symptom. But we might have a table capturing when suggestions are shown/accepted for analytics.
-- **Audit log**: Possibly a simple table (log_id, doctor_id, action, timestamp, details) to record events like "login", "created prescription #X", etc., if needed for compliance/audit in future.
-- All data in RDS will be in a private subnet, accessible by the backend only. We'll enable encryption at rest on the RDS and enforce SSL connections from the app.
-- **File Storage & Static Content:**
-- **Prescription PDFs:** We may decide to store each finalized prescription PDF in S3 for persistence, naming the file by prescription_id or a UID. This is useful if the doctor wants to re-download a past prescription, or if we want to deliver the PDF via a link (e.g., email to patient). If storage cost is a concern, they are small files, so not major. Or we could regenerate on the fly from DB if needed (thus not store PDFs at all, just data). Storing PDFs saves recomputation and ensures the exact copy given to patient is preserved (for legal reasons, perhaps it's good to have exact copy).
-- S3 Bucket setup: likely one bucket, with folders like /prescriptions/{doctor_id}/{prescription_id}.pdf. Access: either private (backend uses IAM to fetch if needed) or if we want direct access, use pre-signed URLs.
-- **Static Frontend:** If we deploy the React app to S3 as a static site, we'd have another bucket (or subfolder) that hosts the HTML/JS/CSS. That would be tied to a CloudFront distribution for CDN and using a custom domain (e.g., app.seva-arogya.com). Otherwise, we might serve the static files via Flask (which is simpler in early stage). The design keeps this flexible.
-- **Audio Files:** By default we won't store audio to avoid heavy storage and privacy issues. If we decide to keep audio for improving transcription models or audit, we can use an S3 bucket for that too (maybe a short-term storage that auto-deletes after some days). But not in MVP unless explicitly needed.
-- **Application Load Balancer (ALB):**
-- We'll set up an ALB to listen on port 443 (HTTPS) for our domain. It holds an SSL certificate (from AWS Certificate Manager) for encrypting traffic.
-- The ALB has a target group pointing to the ECS Fargate tasks (Flask containers). Health checks will be configured (Flask might have a /health endpoint responding with 200 OK).
-- The ALB routes all requests on relevant paths (maybe all /api/\*) to the backend. If hosting frontend separately, ALB might not serve it, but if combined, ALB can serve everything through Flask.
-- ALB provides basic DDOS protection and can scale to handle a large number of connections, which covers our needs as usage grows.
-- If we use WebSockets later (for streaming voice), ALB supports WebSocket pass-through, so we can integrate that without switching to API Gateway (this influenced our ALB vs API Gateway decision).
-- **Network Security & VPC:**
-- All AWS components will reside in a VPC (Virtual Private Cloud). We will use private subnets for ECS tasks and RDS. The ALB can be in a public subnet but only exposes port 443.
-- The ECS tasks (Flask containers) need outbound internet access to call AWS APIs (Transcribe etc.), so they will use a NAT Gateway or have public IP with security group (less preferred). We'll likely give them private IPs and route out via NAT.
-- Security Groups:
-  - ALB SG: allows inbound 443 from the internet, outbound to ECS SG.
-  - ECS SG: allows inbound from ALB SG on whatever port the container listens (e.g., 5000 or 80), and outbound to RDS SG on port 5432, and outbound to internet (for AWS API calls).
-  - RDS SG: allows inbound from ECS SG on 5432 (Postgres).
-  - Perhaps an optional SG for any other service if needed (if we had a Bastion for DB or something, but probably not needed).
-- This setup ensures the database is not accessible from the internet, and only our app server can talk to it. The ALB ensures only HTTP(S) traffic reaches the app.
-- **Scalability Considerations:**
-- ECS tasks (Flask app) can scale out horizontally. We can configure auto-scaling based on CPU or memory usage, or based on request rate (if integrated with CloudWatch metrics like ALB's RequestCount). For instance, start with 2 tasks (for high availability across AZs), scale up to, say, 5 if CPU > 70% or if each is handling many requests. Flask with Gunicorn might handle a few hundred requests per second per container (depending on instance size and if I/O bound by external calls).
-- AWS Transcribe and other services scale on their end (they handle concurrent requests transparently up to service limits).
-- The database can scale read capacity via read replicas and write by instance size; eventually, if needed, upgrade to a multi-AZ or cluster.
-- We ensure statelessness so any app server can handle any user's request. Session is via JWT, and any needed state (like current prescription draft) can be maintained client-side or in a temporary store if needed (but probably not needed on server side beyond each request).
-- We might use caching for suggestions or drug list lookup to reduce DB hits (e.g., cache common suggestion results in memory or an ElastiCache Redis if needed). Initially likely not needed as load is small.
-
-## Data Flow
-
-**1\. User Login:** When a doctor navigates to the application, they either sign in or sign up. Using Cognito's hosted UI (or an embedded widget), they enter credentials. Cognito verifies them and redirects back to the app with a token (or the app uses Amplify to handle this). Now the user is authenticated with a JWT stored in the app.
-
-**2\. Start Consultation (UI ready):** The doctor opens a new prescription on the UI (this could be just the default state after login - an empty form is ready). They can enter patient details (either manually type name/age or perhaps select an existing patient if that was in scope, but MVP might just type each time). The app is now ready to record notes.
-
-**3\. Voice Dictation (Frontend capture):** The doctor presses the "Record" button and speaks a sentence or two (e.g., _"Patient is a 45-year-old male with complaints of chest pain and shortness of breath since yesterday."_). The front-end, via the microphone, captures audio. Because continuous streaming is complex, we assume the doctor presses "Stop" after that sentence or it auto-stops after a few seconds of silence.
-
-**4\. Sending Audio (API call):** The captured audio blob is then sent via an HTTP POST to the backend API endpoint (e.g., POST /transcribe). The JWT token is included in headers for auth. The payload is binary (the audio file data). We may encode it as needed (some implementations send as Base64 JSON, but ideally, we send multipart form data with the audio file for efficiency).
-
-**5\. Speech-to-Text Processing:** The Flask backend receives the request: - Auth middleware checks the JWT, confirms the user. - The audio data is saved to memory or a temp file. The backend calls AWS Transcribe: - If using synchronous API: It sends the audio and waits for the response (Transcribe could respond in a couple of seconds with the full text). - If using streaming: The backend might actually stream audio bytes to Transcribe as it receives them, but since we likely accumulate the whole audio then send, streaming might not be needed unless we want to start showing partial text in real-time. - Transcribe returns text: e.g., "Patient is a 45-year-old male with complaints of chest pain and shortness of breath since yesterday." - The backend takes that text and optionally calls Comprehend Medical: - Comprehend analyzes and might return entities: e.g., Age = 45-year-old male (though age might not be explicitly tagged; but "chest pain" as SYMPTOM, "shortness of breath" as SYMPTOM, "yesterday" as DATE or time reference). - The backend maps these: - It might fill "Patient Age/Gender" if we had those fields from voice (though likely patient details would be typed, but this example shows it's possible via voice). - Symptoms list gets \["chest pain", "shortness of breath"\] with duration "since yesterday". - No diagnosis yet in this sentence, so Diagnosis remains empty. - It will hold these structured pieces in a draft state. - The backend also calls the suggestion engine: given symptoms "chest pain" maybe it anticipates possible causes or next steps, but without a diagnosis, suggestions might be deferred. It could suggest "Consider ECG?" or some diagnostic suggestion if we had that feature, but likely not at this point. We probably wait until a diagnosis or plan is mentioned to suggest medication. - The backend responds with JSON containing:
-
-{  
-"transcript": "Patient is a 45-year-old male with complaints of chest pain and shortness of breath since yesterday.",  
-"structured": {  
-"symptoms": \["chest pain", "shortness of breath"\],  
-"duration": "since yesterday",  
-"vitals": \[\], "diagnosis": null,  
-"medications": \[\]  
-},  
-"suggestions": {  
-"medications": \[\], "instructions": \[\]  
-}  
-}
-
-(This is an example structure; actual fields might differ.)
-
-**6\. Frontend Update:** The React app receives the response. - It displays the transcribed text somewhere (maybe a transcript box or it directly fills into a "Notes" field). - It also updates the structured fields UI: e.g., it might auto-populate a "Symptoms" field or list with "chest pain (since yesterday)", "shortness of breath (since yesterday)". - Because there were no suggestions returned (in this scenario), none are shown. If suggestions were present, e.g., if doctor said a diagnosis, then suggestions for meds might appear as a highlighted option in the Medications section for the doctor to tap. - The doctor can at this point correct anything if needed (maybe they edit "since yesterday" to "since last night" or add detail).
-
-**7\. Subsequent Dictations:** The doctor continues, perhaps now saying a diagnosis or plan. e.g., _"Likely diagnosis is angina. Will prescribe aspirin 75 mg daily and advise lipid profile test. Start on atorvastatin 10 mg at night."_ - The same process repeats: audio -> /transcribe -> text -> structure. - Now the text might be: "Likely diagnosis is angina. Will prescribe aspirin 75 mg daily and advise lipid profile test. Start on atorvastatin 10 mg at night." - Comprehend might extract: - Diagnosis: "angina" - Medication 1: "aspirin 75 mg daily" - Medication 2: "atorvastatin 10 mg at night" - Instruction: "advise lipid profile test" (this might be seen as a test or instruction). - Suggestion engine: given diagnosis "angina", it might have suggestions like lifestyle advice ("advise diet, exercise") or ensure certain medications (beta-blocker, etc. if relevant). But since doctor already mentioned aspirin and statin, suggestions might be minimal. Or it could suggest "Add beta blocker?" if in knowledge base. - Response goes back, and frontend updates: - Fills Diagnosis field with "angina". - Adds two medications in list: Aspirin 75 mg once daily, Atorvastatin 10 mg at night. Possibly their durations - not mentioned, likely ongoing, maybe default to something or leave duration blank for doctor to fill (some prescriptions have no fixed duration for chronic meds). - Instruction or Tests field gets "Lipid profile test". - Suggestions maybe show one extra med suggestion if any (or perhaps no suggestions if the system thinks it's complete). - The doctor reviews and maybe manually adds "for 30 days" to aspirin, or maybe decides to add a beta-blocker if suggestion reminded, etc., using the UI.
-
-**8\. Finalize Prescription:** After dictating all parts and reviewing, the doctor clicks "Finalize". - The front-end compiles the current structured data (which now includes patient info, symptoms, diagnosis, med list, instructions) and sends a POST /prescriptions request with that data (and possibly a flag for language if translation needed). - The backend on /prescriptions: - Again authenticates the JWT. - Validates the data (ensures required fields like at least one diagnosis or medication is present, etc., based on business rules). - Creates a new prescription record in the database: - Insert into Prescriptions table (with doctor_id, patient details, diagnosis text, etc.). - Insert related rows into Prescription_Meds table for each medication. - Possibly insert into a Symptom or Finding table or as a JSON in prescription. - Calls the PDF generation module: passes the structured data plus doctor's profile info. - The module merges data into a template (which might be an HTML template that includes doctor's name, clinic, etc., and loops through med list). - Generates a PDF file binary. - If output language != English (say Hindi): - It would have translated certain fields before generating PDF (e.g., the diagnosis and instructions might be translated to Hindi text). - The PDF template would use a font that supports Devanagari script for Hindi. - The PDF binary is either directly returned (with HTTP headers like Content-Type: application/pdf) or first saved to S3. - If saved to S3, the backend might generate a pre-signed URL and return JSON { "pdf_url": "&lt;signed URL&gt;" }. The front-end would then either navigate to that URL or use it to download. - Direct return might simplify: the front-end gets the PDF blob and triggers a file download in the browser. - The backend also returns a success response, including maybe an ID or status.
-
-**9\. Prescription Delivery:** The front-end triggers the print or download: - If it got a PDF file in response, it can use the browser's download mechanism or open it in a new tab (the user can then print). - If it got a URL, it opens that. - At this point, the prescription is completed. The doctor hands the printed sheet to the patient or shares it electronically.
-
-**10\. Post-Finalization:** - The app might reset to a new blank prescription screen for the next patient. - The structured data is now saved server-side. If the doctor wanted to quickly duplicate or refer to it later, they could (though MVP might not have a UI for viewing history yet). - The suggestions engine can update its learning based on this new prescription (for example, record that for "angina" this doctor prescribed aspirin and atorvastatin, so next time those should be suggested if not already). - If any analytics or logging is done, this action is logged (e.g., "Prescription created" event).
-
-**11\. Logout or Session End:** - At the end of the shift, the doctor logs out from the app, which simply clears tokens. The backend doesn't maintain session so nothing special on server aside from maybe Cognito tracking last active time. - All data remains saved for future, accessible upon next login or via some future patient lookup.
-
-Throughout this flow, error paths include things like: - Speech not recognized (maybe returns empty or garbled text) -> the system would show "\[Unrecognized\]" or ask to retry. - AWS service call fails (network issue) -> system returns an error and front-end shows a message. The doctor can retry speaking. - Any validation fails on finalize (maybe no medications listed) -> backend could return error "prescription cannot be empty" and front-end highlights missing info.
-
-The design ensures that each step is discrete and provides feedback, which is important in a real-time workflow with a patient sitting in front of the doctor.
-
-## Frontend and Backend Interaction Details
-
-- **Login Integration:** The front-end uses AWS Amplify or the AWS Cognito SDK. After the user enters credentials, the Cognito service returns tokens (Access Token, ID Token, Refresh Token). We likely store the ID or Access token in memory (or localStorage if persistent login is desired, though with caution). All subsequent API calls from frontend include the **Authorization: Bearer \\&lt;token&gt;** header. The backend has a middleware (like a Flask decorator on routes) that checks this token. It will use Cognito's JSON Web Key Set (JWKS) to verify the signature (this can be cached). If valid, it extracts the user's sub (unique id) and possibly other claims (like email).
-- **After Auth - Using Identity:** The backend might maintain its own user table. If so, when a token is verified, the backend will look up the user in DB (by sub or email) to get internal details (like doctor_id, preferences). If we decide not to duplicate user info in DB, we might rely on token claims for basics and only store things not in Cognito (like clinic address, etc., which we could store in Cognito attributes too). For now, assume minimal lookup needed.
-- **State Management on Frontend:** The React app likely has a context or Redux store for the "current prescription". Each voice input cycle updates this state. For example, there might be actions: ADD_SYMPTOM, SET_DIAGNOSIS, ADD_MED, etc., that the responses from backend trigger. This keeps the UI in sync with what's been recognized.
-- **Continuous vs Stepwise Interaction:** Because we opted for short, discrete interactions, the front-end essentially waits for each response before allowing a new recording or move. We ensure the UI indicates when it's okay to speak again. In future, we might allow a streaming mode where the doctor just talks and the text appears live. The architecture can evolve to that by adding WebSocket support, but initial design uses this request-response loop.
-- **CORS:** If the frontend is hosted on a different domain (e.g., static site on CloudFront and API on a different domain/subdomain), we will enable CORS on the Flask app for the allowed origin. Amplify or custom config will handle the domain setup. For simplicity, if served from same domain (maybe we serve React via Flask), then CORS isn't an issue.
-- **Front-end Error Handling:**
-- If a token expires (Cognito tokens by default expire in ~1 hour), the front-end should handle a 401 response by refreshing the token (if a refresh token exists and we included it) or forcing re-login. Amplify can manage token refresh automatically if configured.
-- For expected errors (like backend validation errors), the backend returns a 4xx code with a message; the front-end can display that message near the relevant form field.
-- Network issues: the front-end should detect if the request times out or network down, and prompt "Network error, please check connection".
-- Audio permission issues: If the user hasn't given microphone permission, the app should prompt them, etc. (This is a front-end concern mostly).
-- **Cognito Integration Detail:** We might utilize **Cognito Hosted UI** for simplicity: that would redirect to a Cognito-provided login page. After login, it can redirect back to our app with a code that we exchange for tokens. This is more secure (keeps creds off our client side). Alternatively, using Amplify's Auth.signIn() function which will directly handle auth in the app. For MVP, either is fine; amplify might speed up dev.
-- **Session Persistence:** It's convenient for doctors if they don't have to log in every single time during the day. So we will implement session persistence via Cognito's refresh token. The front-end can quietly use the refresh token to get a new Access token when needed (Amplify does this). We'll ensure the refresh token lifespan is reasonable (maybe a day or a week, depending on security posture).
-- **Using the Microphone API:** On pressing record, we use navigator.mediaDevices.getUserMedia({ audio: true }) to get a stream. Then a MediaRecorder to record PCM audio. Likely, we record in small chunks or single blob at end. We must decide format: Amazon Transcribe expects specific audio format (PCM 16kHz, mono, for example). We may have to convert the recorded data (which might be webm or opus from browser) to PCM WAV. This could be done in front-end by recording raw PCM or in backend by converting using ffmpeg or so. A simpler route: record as WAV in front-end directly if possible (MediaRecorder can output WAV via some library or maybe use Opus and convert).
-- **Latency optimization:** To minimize latency, the front-end might start sending data even before user stops speaking if we did streaming. Without streaming, we at least ensure the chunk of audio is small (perhaps instruct doctors to speak one sentence at a time, which naturally they will in a consultation).
-- **Printing Flow:** The front-end after receiving PDF might just use window.open or create an &lt;iframe&gt; to let user print. We ensure the PDF has proper page setup. Alternatively, if we integrate with the device's printing, we might use the browser's print dialog on an opened PDF.
-- **Interfaces Summary:**
-- **Front-end to Back-end:** REST API calls (JSON over HTTPS, except the audio which is binary). Auth via JWT header.
-- **Back-end to AWS Services:** SDK calls within Flask app (these are server-to-server calls, the client doesn't see them). The back-end is configured with credentials/roles to use these.
-- **Back-end to DB:** Through a PostgreSQL driver (likely psycopg2 or SQLAlchemy). Encrypted connection (SSL) to RDS.
-- **Back-end to S3:** Using AWS SDK if storing or retrieving files. Possibly presigned URLs to send to client if needed.
-- **Back-end to Cognito:** Not often needed beyond JWT verification (which can be done via public keys). We might call Cognito Admin APIs for user management if needed (like to get user attributes or if we implement password resets in an admin interface), but likely not in MVP.
-
-## Security Considerations
-
-Security is critical since we are dealing with healthcare data (even if limited to prescriptions). The design incorporates security at multiple levels:
-
-- **Authentication Security:** By leveraging Cognito, we inherit a lot of security features (secure password storage, account lockout for too many failed attempts, etc.). We will enforce TLS everywhere so credentials are not exposed. We also consider enabling MFA in Cognito as an option for doctors who want extra security, though it may not be mandatory in early versions.
-- **Authorization Checks:** Every API endpoint will confirm the identity from JWT and then check any relevant permissions. For example, if in future an admin role is introduced to view stats, endpoints will check if the user has that role. For now, the rule is simple: users can only act on resources they own (their prescriptions).
-- **Data Encryption:**
-- At rest: RDS encryption will be enabled (AES-256 by AWS). S3 encryption enabled for all buckets (either SSE-S3 or SSE-KMS if we want to manage keys).
-- In transit: Enforce SSL for DB connection; all calls to external AWS services from backend use HTTPS by default.
-- The JWT tokens from Cognito are transmitted over HTTPS and stored client-side; they are short-lived and scoped.
-- **Sensitive Data Minimization:** We intentionally do not collect or store more patient data than necessary. At MVP, we might only have patient name/age on the prescription (no unique identifiers like phone or address unless doctor inputs it in notes). This limits exposure. The voice recordings are not stored persistently, so any sensitive info spoken (like patient symptoms) is transient and only the resulting text is stored which is anyway part of the prescription.
-- **Audit Logging:** We keep logs of actions which can be used to trace any security incidents. For example, CloudWatch logs will show each API call with user id (we can log the Cognito username or sub with each request for traceability). We might implement a separate audit log in DB if needed for critical actions (like if a prescription is edited or accessed, if that becomes a feature).
-- **Preventing Unauthorized Access:** The combination of JWT auth and DB scoping ensures one user can't retrieve another's data through the API. Additionally, the S3 structure will use random IDs or user-specific paths so one user can't guess another's PDF link (and even if they did, the link would require either a valid signature or an IAM credential).
-- **Web App Security:**
-- Use HTTPS only. Possibly HSTS header for our domain to prevent any downgrade.
-- Protect against XSS by not injecting any user-generated content into pages unsanitized. Our use-case has limited user-generated content (mostly the doctor's own words which are not likely malicious, but we still use proper escaping when rendering anything in HTML).
-- Protect against CSRF: Since we use JWT and not cookies for auth, CSRF is less of an issue (JWT in header is not auto-sent by browser, so CSRF attacks are mitigated). If we did use cookies for tokens, we'd add CSRF tokens.
-- Content Security Policy (CSP) headers can be added to ALB or CloudFront to restrict script sources, etc., adding another layer of defense.
-- **Secrets & Config:** No secret keys will be in the front-end code. The back-end will not have hard-coded secrets either; everything is fetched from environment or Secrets Manager at runtime. Build pipelines and config files will treat secrets carefully (using GitHub secrets or parameter store in pipeline, etc.).
-- **Compliance Alignment:** Although not fully in scope, we consider:
-- **DISHA (India's health data bill)** likely will require explicit patient consent for data use and certain rights over data. In our design, since patients aren't directly using the system, the doctor is the one inputting data. The output (prescription) is anyway something the patient gets a copy of. For now, we assume the doctor has implicit consent to create the prescription. In future, if storing patient data centrally, we might need a way to allow patients to request deletion or viewing of their data.
-- **HIPAA** (if ever relevant, e.g., if expanding to US): our use of encryption, access control, audit logs are steps in the right direction. We would need to ensure any service used (like AWS Transcribe) is HIPAA eligible (AWS does have HIPAA compliance for Transcribe and Comprehend if under a BAA). So if this product were to be used in a HIPAA context, we'd sign a BAA with AWS and ensure all data is stored in compliant manner. For now, being in India, the focus is more on IT Act and upcoming PDP (Personal Data Protection) law compliance.
-- **Rate Limiting & Abuse:** Because this is a closed system for authorized doctors, we may not implement strict rate limiting initially. But to be safe (and to control costs), the backend could enforce limits like: no more than X transcription requests per minute per user (if someone accidentally leaves mic on or a bug causes spamming). Also, Cognito can throttle sign-in attempts to prevent password brute force.
-- **Backup and Recovery:** RDS will have automated backups. S3 is inherently durable (11 9's). We will also periodically export critical data (like prescription records) for backup or have multi-AZ RDS to handle instance failure. This is more about reliability, but it intersects with security in terms of data recovery in disaster scenarios.
-- **Third-Party Libraries:** We will choose reputable libraries for PDF generation, JWT, etc., to avoid security flaws. The CI could run security audits (like npm audit for front-end, safety or bandit for Python).
-- **Physical Security:** Since all runs on AWS, we rely on AWS for physical data center security.
-
-## AWS Resources Breakdown
-
-Here is a summary of the AWS components used and their purpose in the system:
-
-- **Amazon Cognito User Pool:** Manages user registration, login, and tokens. Configured with a domain for hosted UI or integrated via SDK. Provides JWTs that our app uses for auth.
-- **Amazon ECS (Fargate) Cluster:** Runs our Dockerized Flask backend. We define a Task Definition with containers (likely one container for the API; possibly a sidecar for something like X-Ray or logging if needed). Fargate Service ensures the desired number of tasks are running and handles deploying new versions (using either rolling update or blue/green).
-- **Amazon Elastic Load Balancer (Application Load Balancer):** Fronts the Fargate service. Listens on HTTPS, uses an ACM certificate for our app's domain. Health-checks the tasks and routes traffic. Also handles sticky sessions if needed (not needed for JWT stateless design).
-- **Amazon RDS (PostgreSQL):** Stores persistent data (users, prescriptions, etc.). Configured with multi-AZ (for HA) if desired, and automated backups. Initial size could be db.t3.small (for cost savings), upgrade as needed. Parameter group adjusted for our use if needed (e.g., to allow more connections).
-- **Amazon S3:**
-- Bucket 1: seva-arogya-prescriptions (private) for storing PDFs and perhaps audio. Life-cycle rules could be added (e.g., purge old audio files after 30 days if we store them).
-- Bucket 2: seva-arogya-web (public for static hosting) if we host the front-end separately. This would be configured for static website or via CloudFront.
-- **Amazon CloudFront:** If using above static bucket, a CloudFront distribution will cache the static content for global access and provide HTTPS on the front-end site as well. It can also do geo-redundancy (but since users are in India, not critical, though CloudFront will still improve last-mile performance).
-- **AWS Transcribe (Medical):** No infrastructure to provision; we simply call this service via its API. We ensure our AWS account has access to it (some services need enabling). We might configure a custom vocabulary within Transcribe if needed (Transcribe allows adding custom words to improve recognition of uncommon terms like local drug brand names or physician names).
-- **AWS Comprehend Medical:** Similarly called on demand, no infra setup. Ensure the IAM role has permission comprehendmedical:DetectEntities (and related calls).
-- **AWS Translate:** Called on demand. Possibly ensure the target languages are supported. No infra needed except IAM permission translate:TranslateText.
-- **AWS Secrets Manager:** We will store e.g., DB_PASSWORD (if not using IAM auth for RDS), and perhaps any other secret like an email SMTP password if we had one. Our ECS task role must have permission to read these specific secrets. We identify secrets by ARNs.
-- **Amazon CloudWatch:**
-- Logs: We configure the ECS task to send logs to CloudWatch Logs (each container's stdout/stderr). We might create separate log groups for e.g., "seva-arogya-backend".
-- Metrics: By default, CPU/Memory of ECS, and RDS performance, etc., are available. We might push custom metrics (like number of transcriptions done, avg latency, etc.) using CloudWatch PutMetricData from our code or via CloudWatch Embedded Metrics.
-- Alarms: e.g., an alarm if CPU > 80% for 5 minutes (to trigger scale-up or just notify), or if free memory low, or if error log entries > X per minute (to catch issues).
-- **AWS X-Ray (Optional):** We can enable X-Ray tracing in the Flask app (with X-Ray SDK). This will give a service map and traces through our code and external calls, helpful for debugging performance. It's not strictly necessary but good for deeper insight.
-- **AWS Identity and Access Management (IAM):** Key roles/policies:
-- ECS Task Execution Role: Allows ECS to pull images from ECR, log to CloudWatch.
-- ECS Task Role: Attached to running container for AWS API calls. This will include policies for Transcribe, ComprehendMedical, Translate, S3 (specific bucket actions), Secrets Manager (get secret for DB), possibly X-Ray write, and CloudWatch putMetrics if used.
-- Cognito roles: If we use Cognito Identity Pool (for auth to AWS services directly from frontend, not likely needed here). If not, then just the user pool is fine with no roles per user.
-- **Amazon Elastic Container Registry (ECR):** We will use ECR to store our Docker image for the backend (and possibly a separate one for any other microservice if they arise). The CI/CD will push to ECR and ECS will fetch from there. This keeps the deployment contained in AWS.
-- **Other Services (future):**
-- If we expand features, we might incorporate **AWS Lambda** for certain asynchronous tasks (e.g., nightly analytics or cleanup jobs), or **Amazon SNS/SQS** for decoupling (e.g., send an SQS message with audio data to be processed by a worker; but our design currently handles it synchronously).
-- For now, not needed. We keep the design open to adding such components if the need arises (e.g., heavy ML computation could be offloaded to a Lambda or SageMaker endpoint in future).
-
-## DevOps and Automation Hooks
-
-To ensure high code quality and that our documentation remains up-to-date with the system, we implement several automation hooks in our development workflow:
-
-- **Linting & Formatting Checks:** Our CI pipeline runs linters for both backend and frontend. For Python, we use _Black_ (auto-formatter) and _Flake8_ (style and error check). For React/JS, we use _ESLint_ and _Prettier_. These tools enforce a consistent code style and catch common errors. The CI will fail the build if any linter returns errors. Developers are encouraged to run these locally (with pre-commit hooks) as well. _Reasoning:_ This reduces trivial review comments and maintains readability across the team.
-- **Automated Testing in CI:** We maintain a test suite:
-- **Unit Tests:** e.g., test the parsing logic (given some text, do we extract correct structure?), test suggestion logic (input context yields expected suggestions), test utility functions (like date formatting).
-- **Integration Tests:** We might use a lightweight approach (e.g., spin up a test instance of the Flask app, simulate a JWT, and call endpoints with sample data). Specifically, test the /transcribe flow with a known audio file: we might use a short pre-recorded WAV of someone saying a known phrase, and assert that the response text matches expected. This is tricky since it depends on the STT service output, but we can use a deterministic input or mock the Transcribe call in tests if offline.
-- **End-to-End Tests:** In a staging environment, we could have a script that runs a headless browser (using something like Selenium or Playwright) to simulate a user login, record a sample (maybe use a pre-recorded audio injection if possible), and go through to PDF generation. This ensures the whole pipeline works. This might be more for staging QA than every CI run due to complexity. The CI will run the faster unit/integration tests on each commit. _Reasoning:_ Catches bugs early and ensures new changes (like updating the NLP logic) don't break existing functionality.
-- **Voice-to-Text Accuracy Monitoring:** We schedule a periodic job (maybe a nightly build or a CloudWatch Scheduled Event that triggers a Lambda or our own system's maintenance endpoint) to run a set of sample audio clips through the transcription and structuring pipeline. These sample audios have known "ground truth" transcriptions and expected structured outputs. The job will compare actual results to expected and log an accuracy metric. If accuracy falls below a threshold (perhaps due to changes in AWS models or code regressions), it will send an alert (email/Slack to developers). _Reasoning:_ This acts as a regression test for the AI components whose behavior can change over time. It ensures we maintain a quality bar and notice if, say, a new medical term isn't recognized after an update.
-- **Documentation Sync (Design & Requirements):** We treat docs/requirements.md and docs/design.md as living documents. To avoid them getting outdated:
-- We create a commit hook or CI job that checks for certain changes. For instance, if files in the code/ directory that define API routes or data models are modified, the CI can flag whether the design document should be updated. Not automatically enforce, but at least remind the contributor by posting a comment or failing a "documentation check" if the docs weren't updated in the same PR.
-- In the future, we might integrate an AI assistant (like Kiro itself) to auto-scan differences. For example, if a new endpoint /patients is added, the assistant could append a description of it in the design docs, subject to developer review.
-- Similarly, if product management updates a feature (say changes priority or details in a user story), an updated requirements.md should be generated. We might maintain the source of truth in a structured form (like YAML or a Trello board) and generate markdown from that. But given our current setup, manual but conscious updating is fine, aided by clear sectioning in the docs. _Reasoning:_ Keeping design docs updated reduces knowledge silo and helps new team members or even the AI agent (Kiro) to always have correct context. It also serves as documentation for compliance or stakeholder communication. Automating part of it ensures it's not neglected.
-- **Continuous Deployment Hooks:** After tests pass, the pipeline automatically deploys to a dev/test environment (could be an AWS ECS service pointing to a dev cluster). We might require manual approval for deploying to production (especially in healthcare setting, cautious approach). The pipeline also invalidates CloudFront cache if front-end changed, runs DB migrations if any (using a migration tool like Alembic for SQL).
-- **Monitoring & Alerts Setup:** We integrate alerts such that if certain alarms trigger (e.g., high error rate or system down) an email or message is sent to the dev team. Also, in case of critical security patches (dependency alerts from GitHub or Snyk), those are surfaced. While not exactly a "hook," it's part of our DevOps culture to respond quickly to issues.
-- **Developer Environment:** We ensure that the project is easy to spin up for development: maybe a Docker Compose file to run a local Postgres and a local dev server, scripts to add a test user etc. This encourages contributors to test thoroughly locally before pushing.
-- **Agent (Kiro) Integration:** Since Kiro is generating these docs, we consider using it in future development phases. For example, if we have a user story change, a developer or PM could prompt Kiro with the new info and have it update the requirements.md. Or use it to generate initial code stubs based on the design. Essentially, Kiro can be part of the toolchain (with careful human verification) to speed up development and maintain alignment with design.
-
-By implementing these hooks and processes, we aim for a maintainable, high-quality codebase where the documentation, code, and infrastructure all evolve together systematically. This reduces technical debt and ensures the system remains robust as we add features or onboard new developers.
+### 5.1 Core Endpoints
 
+**Authentication**:
+- `POST /api/v1/auth/register` - User registration
+- `POST /api/v1/auth/login` - Login (returns JWT tokens)
+- `POST /api/v1/auth/refresh` - Token refresh
+
+**Transcription**:
+- `POST /api/v1/transcribe` - Audio transcription (multipart/form-data)
+  - Returns: transcript, entities, structured_data, suggestions
+
+**Prescriptions**:
+- `POST /api/v1/prescriptions` - Create prescription
+  - Input: patient_info, symptoms, diagnosis, medications, language
+  - Returns: prescription_id, pdf_url
+- `GET /api/v1/prescriptions` - List prescriptions (paginated)
+- `GET /api/v1/prescriptions/{id}` - Get specific prescription
+
+**Profile**:
+- `GET /api/v1/profile` - Get doctor profile
+- `PUT /api/v1/profile` - Update profile settings
+
+### 5.2 API Standards
+
+- RESTful design with JSON format
+- JWT authentication (Bearer token)
+- Versioned endpoints (/api/v1/)
+- Standard HTTP status codes (200, 201, 400, 401, 404, 500)
+- Rate limiting: 100 requests/minute general, 20 transcriptions/minute
+- CORS enabled for allowed origins
+
+---
+
+## 6. Security Architecture
+
+### 6.1 Authentication Flow
+
+1. User submits credentials to Cognito
+2. Cognito validates and returns JWT tokens (access + refresh)
+3. Frontend stores tokens securely
+4. All API requests include JWT in Authorization header
+5. Backend validates JWT signature and expiration
+6. Backend extracts user identity and authorizes request
+
+**Token Expiry**: Access token (1 hour), Refresh token (30 days)
+
+### 6.2 Network Security
+
+**VPC Architecture**:
+- Public Subnet: ALB, NAT Gateway
+- Private Subnet: ECS tasks, RDS database
+
+**Security Groups**:
+- ALB-SG: Inbound 443 from internet, Outbound to ECS-SG
+- ECS-SG: Inbound 5000 from ALB-SG, Outbound to RDS-SG and internet
+- RDS-SG: Inbound 5432 from ECS-SG only
+
+### 6.3 Application Security
+
+- Input validation with Marshmallow schemas
+- SQL injection prevention (parameterized queries)
+- XSS prevention (output encoding)
+- Rate limiting per user
+- Audit logging for all actions
+- Secrets stored in AWS Secrets Manager
+
+---
+
+## 7. Infrastructure Design
+
+### 7.1 AWS Resources
+
+**Compute**:
+- ECS Cluster: seva-arogya-cluster (Fargate)
+- Task Definition: 0.5 vCPU, 1GB memory
+- Service: 2-10 tasks with auto-scaling (target CPU 70%)
+
+**Database**:
+- RDS PostgreSQL 15, db.t3.medium
+- Multi-AZ deployment, 100GB storage
+- Automated backups (7-day retention)
+
+**Storage**:
+- S3 Bucket: seva-arogya-prescriptions (private, encrypted)
+- S3 Bucket: seva-arogya-static (public read, CloudFront)
+
+**Networking**:
+- VPC: 10.0.0.0/16
+- Public Subnets: 10.0.1.0/24, 10.0.2.0/24
+- Private Subnets: 10.0.11.0/24, 10.0.12.0/24
+- ALB: Internet-facing, HTTPS (443), ACM certificate
+
+### 7.2 Monitoring
+
+**CloudWatch Metrics**: Request count, response time (p50/p95/p99), error rate, CPU/memory utilization
+
+**CloudWatch Alarms**: CPU > 80%, error rate > 5%, RDS storage < 10GB
+
+**X-Ray Tracing**: All API requests, external service calls, performance bottlenecks
+
+**Log Retention**: Application logs (30 days), Database logs (7 days), Audit logs (7 years)
+
+---
+
+## 8. Integration Design
+
+### 8.1 AWS Service Integration
+
+**Transcribe Medical**: Synchronous API call, upload to temp S3, poll for completion, retrieve transcript
+
+**Comprehend Medical**: Synchronous entity extraction, returns medications, symptoms, dosages, diagnoses
+
+**Translate**: Batch translation with custom terminology, preserves medical terms
+
+**Cognito**: JWT token validation using JWKS, automatic token refresh
+
+### 8.2 Error Handling
+
+- Retry on transient failures (3 attempts with exponential backoff)
+- Fallback to standard Transcribe if Medical unavailable
+- User notification on persistent failures
+- Graceful degradation (manual typing if transcription fails)
+
+---
+
+## 9. Deployment Strategy
+
+### 9.1 Environments
+
+- **Development**: 1 ECS task, small RDS, synthetic data
+- **Staging**: 2 ECS tasks, medium RDS, anonymized production data
+- **Production**: 2-10 ECS tasks, Multi-AZ RDS, real data
+
+### 9.2 CI/CD Pipeline (GitHub Actions)
+
+1. **Code Quality**: Linting (Black, Flake8), type checking, security scanning
+2. **Testing**: Unit tests, integration tests, coverage > 70%
+3. **Build**: Docker image build and push to ECR
+4. **Deploy to Staging**: Update ECS, run smoke tests
+5. **Manual Approval**: Review staging deployment
+6. **Deploy to Production**: Blue-green deployment, automatic rollback on failure
+
+### 9.3 Database Migrations
+
+- Tool: Alembic (SQLAlchemy migrations)
+- Process: Dev → Staging → Production (during maintenance window)
+- Rollback: Alembic downgrade or RDS snapshot restore
+
+---
+
+## 10. Performance Optimization
+
+**Backend**: Database query optimization with indexes, connection pooling (10 connections), Gunicorn workers (4 per container)
+
+**Frontend**: Code splitting, lazy loading, tree shaking, minification, service worker (future)
+
+**AWS**: CloudFront CDN for static assets, Multi-AZ for low latency, VPC endpoints for AWS services
+
+**Targets**: First Contentful Paint < 1.5s, Time to Interactive < 3s, Lighthouse Score > 90
+
+---
+
+## 11. Testing Strategy
+
+**Unit Tests (70%)**: Service layer logic, utility functions, validation  
+**Integration Tests (20%)**: API endpoints, database operations, AWS service mocks  
+**End-to-End Tests (10%)**: Complete user flows, UI automation (Cypress)
+
+**Coverage Requirements**: Overall > 70%, Critical paths > 90%, Service layer > 80%
 
 ---
 
 ## Document Navigation
 
-This is the complete system design and implementation document for SEVA Arogya. For requirements, user stories, acceptance criteria, and visual diagrams, refer to **requirements.md**.
+For requirements, user stories, acceptance criteria, and visual diagrams, refer to **requirements.md**.
 
-### Quick Reference
-- **requirements.md**: What to build (features, requirements, user stories, diagrams)
-- **design.md**: How to build (architecture, APIs, security, deployment)
-
-### Design Document Sections
-- Section 1: Executive Summary (overview and principles)
-- Section 2: System Architecture (layers and components)
-- Section 3-14: Detailed technical design from Readme.md
-
----
-
-**Document Version**: 2.0  
-**Last Updated**: 2026-02-11  
-**Status**: Approved for Implementation  
-**Next Review**: 2026-03-11
+**Version**: 2.0 | **Status**: Approved | **Next Review**: 2026-03-11
