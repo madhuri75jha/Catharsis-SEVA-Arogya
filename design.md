@@ -132,25 +132,11 @@ The system follows a 5-layer architecture:
 
 **Token Expiry**: Access token (1 hour), Refresh token (30 days)
 
-### 6.2 Network Security
+### 6.2 Network & Application Security
 
-**VPC Architecture**:
-- Public Subnet: ALB, NAT Gateway
-- Private Subnet: ECS tasks, RDS database
-
-**Security Groups**:
-- ALB-SG: Inbound 443 from internet, Outbound to ECS-SG
-- ECS-SG: Inbound 5000 from ALB-SG, Outbound to RDS-SG and internet
-- RDS-SG: Inbound 5432 from ECS-SG only
-
-### 6.3 Application Security
-
-- Input validation with Marshmallow schemas
-- SQL injection prevention (parameterized queries)
-- XSS prevention (output encoding)
-- Rate limiting per user
-- Audit logging for all actions
-- Secrets stored in AWS Secrets Manager
+**VPC**: Public subnet (ALB, NAT), Private subnet (ECS, RDS)  
+**Security Groups**: ALB (443 in) → ECS (5000 in) → RDS (5432 in), strict isolation  
+**Application**: Input validation, parameterized queries, XSS prevention, rate limiting, audit logging, AWS Secrets Manager for credentials
 
 ---
 
@@ -158,35 +144,12 @@ The system follows a 5-layer architecture:
 
 ### 7.1 AWS Resources
 
-**Compute**:
-- ECS Cluster: seva-arogya-cluster (Fargate)
-- Task Definition: 0.5 vCPU, 1GB memory
-- Service: 2-10 tasks with auto-scaling (target CPU 70%)
+**Compute**: ECS Fargate cluster, 0.5 vCPU/1GB tasks, 2-10 instances with auto-scaling at 70% CPU  
+**Database**: RDS PostgreSQL 15 (db.t3.medium), Multi-AZ, 100GB, 7-day backups  
+**Storage**: S3 buckets for prescriptions (private) and static assets (public + CloudFront)  
+**Networking**: VPC 10.0.0.0/16, public/private subnets in 2 AZs, ALB with HTTPS/ACM certificate
 
-**Database**:
-- RDS PostgreSQL 15, db.t3.medium
-- Multi-AZ deployment, 100GB storage
-- Automated backups (7-day retention)
-
-**Storage**:
-- S3 Bucket: seva-arogya-prescriptions (private, encrypted)
-- S3 Bucket: seva-arogya-static (public read, CloudFront)
-
-**Networking**:
-- VPC: 10.0.0.0/16
-- Public Subnets: 10.0.1.0/24, 10.0.2.0/24
-- Private Subnets: 10.0.11.0/24, 10.0.12.0/24
-- ALB: Internet-facing, HTTPS (443), ACM certificate
-
-### 7.2 Monitoring
-
-**CloudWatch Metrics**: Request count, response time (p50/p95/p99), error rate, CPU/memory utilization
-
-**CloudWatch Alarms**: CPU > 80%, error rate > 5%, RDS storage < 10GB
-
-**X-Ray Tracing**: All API requests, external service calls, performance bottlenecks
-
-**Log Retention**: Application logs (30 days), Database logs (7 days), Audit logs (7 years)
+**Monitoring**: CloudWatch metrics (requests, latency, errors, CPU/memory), alarms (CPU > 80%, errors > 5%), X-Ray tracing, log retention (30 days app, 7 years audit)
 
 ---
 
@@ -194,20 +157,12 @@ The system follows a 5-layer architecture:
 
 ### 8.1 AWS Service Integration
 
-**Transcribe Medical**: Synchronous API call, upload to temp S3, poll for completion, retrieve transcript
+**Transcribe Medical**: Synchronous API, temp S3 upload, poll for completion  
+**Comprehend Medical**: Entity extraction (medications, symptoms, diagnoses)  
+**Translate**: Batch translation with custom terminology  
+**Cognito**: JWT validation using JWKS, automatic refresh
 
-**Comprehend Medical**: Synchronous entity extraction, returns medications, symptoms, dosages, diagnoses
-
-**Translate**: Batch translation with custom terminology, preserves medical terms
-
-**Cognito**: JWT token validation using JWKS, automatic token refresh
-
-### 8.2 Error Handling
-
-- Retry on transient failures (3 attempts with exponential backoff)
-- Fallback to standard Transcribe if Medical unavailable
-- User notification on persistent failures
-- Graceful degradation (manual typing if transcription fails)
+**Error Handling**: 3 retry attempts, fallback mechanisms, graceful degradation
 
 ---
 
@@ -219,42 +174,19 @@ The system follows a 5-layer architecture:
 - **Staging**: 2 ECS tasks, medium RDS, anonymized production data
 - **Production**: 2-10 ECS tasks, Multi-AZ RDS, real data
 
-### 9.2 CI/CD Pipeline (GitHub Actions)
+### 9.2 CI/CD Pipeline
 
-1. **Code Quality**: Linting (Black, Flake8), type checking, security scanning
-2. **Testing**: Unit tests, integration tests, coverage > 70%
-3. **Build**: Docker image build and push to ECR
-4. **Deploy to Staging**: Update ECS, run smoke tests
-5. **Manual Approval**: Review staging deployment
-6. **Deploy to Production**: Blue-green deployment, automatic rollback on failure
+GitHub Actions workflow: Code quality → Testing (>70% coverage) → Build Docker image → Deploy to Staging → Manual approval → Production deployment with blue-green strategy and automatic rollback
 
-### 9.3 Database Migrations
-
-- Tool: Alembic (SQLAlchemy migrations)
-- Process: Dev → Staging → Production (during maintenance window)
-- Rollback: Alembic downgrade or RDS snapshot restore
+**Database Migrations**: Alembic tool, Dev → Staging → Production flow, rollback via downgrade or snapshot restore
 
 ---
 
-## 10. Performance Optimization
+## 10. Performance & Testing
 
-**Backend**: Database query optimization with indexes, connection pooling (10 connections), Gunicorn workers (4 per container)
+**Performance Optimization**: Database indexes and connection pooling, Gunicorn workers, code splitting, CloudFront CDN, Multi-AZ deployment. Targets: First Contentful Paint < 1.5s, Lighthouse Score > 90.
 
-**Frontend**: Code splitting, lazy loading, tree shaking, minification, service worker (future)
-
-**AWS**: CloudFront CDN for static assets, Multi-AZ for low latency, VPC endpoints for AWS services
-
-**Targets**: First Contentful Paint < 1.5s, Time to Interactive < 3s, Lighthouse Score > 90
-
----
-
-## 11. Testing Strategy
-
-**Unit Tests (70%)**: Service layer logic, utility functions, validation  
-**Integration Tests (20%)**: API endpoints, database operations, AWS service mocks  
-**End-to-End Tests (10%)**: Complete user flows, UI automation (Cypress)
-
-**Coverage Requirements**: Overall > 70%, Critical paths > 90%, Service layer > 80%
+**Testing Strategy**: Unit tests (70%), Integration tests (20%), E2E tests (10%). Coverage: Overall > 70%, Critical paths > 90%.
 
 ---
 

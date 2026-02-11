@@ -14,14 +14,12 @@
 4. [Nice-to-Have Features](#4-nice-to-have-features)
 5. [Non-Functional Requirements](#5-non-functional-requirements)
 6. [Technical Requirements](#6-technical-requirements)
-7. [User Stories](#7-user-stories)
-8. [Acceptance Criteria](#8-acceptance-criteria)
-9. [Constraints & Assumptions](#9-constraints--assumptions)
-10. [Success Metrics](#10-success-metrics)
-11. [Risks & Mitigation](#11-risks--mitigation)
-12. [Future Enhancements](#12-future-enhancements)
-13. [Visual Diagrams](#13-visual-diagrams)
-14. [Glossary](#14-glossary)
+7. [Constraints & Assumptions](#7-constraints--assumptions)
+8. [Success Metrics](#8-success-metrics)
+9. [Risks & Mitigation](#9-risks--mitigation)
+10. [Future Enhancements](#10-future-enhancements)
+11. [Visual Diagrams](#11-visual-diagrams)
+12. [Glossary](#12-glossary)
 
 ---
 
@@ -582,141 +580,9 @@ To provide doctors with an AI-powered voice assistant that:
 
 ---
 
-## 7. User Stories
+## 7. Constraints & Assumptions
 
-### 7.1 Doctor Stories
-
-**Story 1: Quick Voice Prescription**
-- **As a** busy doctor in an OPD
-- **I want to** quickly record patient findings by speaking
-- **So that** I spend less time writing and maintain eye contact with patients
-- **Acceptance**: Text appears correctly within 2 seconds, natural workflow
-
-**Story 2: Automatic Structuring**
-- **As a** doctor
-- **I want** the system to automatically organize my notes into prescription format
-- **So that** I don't manually structure or rewrite anything
-- **Acceptance**: Prescription fields auto-filled, professional appearance
-
-**Story 3: Smart Suggestions**
-- **As a** doctor
-- **I want** medication suggestions based on diagnosis
-- **So that** I save time and follow standard care practices
-- **Acceptance**: Relevant suggestions, one-click acceptance, faster completion
-
-**Story 4: Error Correction**
-- **As a** doctor concerned about errors
-- **I want to** easily review and edit the output
-- **So that** I maintain 100% control over prescription accuracy
-- **Acceptance**: Easy editing, immediate updates, no data loss
-
-**Story 5: Multi-Language Support**
-- **As a** multilingual doctor
-- **I want to** give prescriptions in patient's local language
-- **So that** patients can read and understand better
-- **Acceptance**: Accurate Hindi translation, easy language toggle
-
-**Story 6: Professional Output**
-- **As a** doctor
-- **I want** uniform, clear prescriptions with my letterhead
-- **So that** they look professional and can be referenced later
-- **Acceptance**: Consistent format, includes letterhead, fits on one page
-
-### 7.2 Patient Stories
-
-**Story 7: Legible Prescription**
-- **As a** patient
-- **I want** typed, clearly printed prescriptions
-- **So that** I can follow instructions correctly without misreading
-- **Acceptance**: Easy to read, clear formatting, unambiguous details
-
-**Story 8: Language Preference**
-- **As a** patient who prefers Hindi
-- **I want** prescriptions in my language
-- **So that** I can understand instructions without help
-- **Acceptance**: Accurate translation, readable script, clear instructions
-
-### 7.3 Administrator Stories
-
-**Story 9: Data Security**
-- **As a** clinic admin
-- **I want** secure storage and backups of doctor/patient data
-- **So that** we comply with regulations and can recover information
-- **Acceptance**: Secure login, encrypted storage, audit logs, data recovery
-
-**Story 10: System Maintenance**
-- **As a** product owner
-- **I want** easy system updates and feature additions
-- **So that** the product stays current with medical advancements
-- **Acceptance**: Modular architecture, clear documentation, automated deployment
-
----
-
-## 8. Acceptance Criteria Summary
-
-### 8.1 Voice Transcription
-- ✓ 90% overall accuracy
-- ✓ 98% accuracy for 100+ common medical terms
-- ✓ < 2 second latency
-- ✓ 20 dictations/minute capacity
-- ✓ Graceful noise handling
-- ✓ Low-confidence word flagging
-
-### 8.2 Data Structuring
-- ✓ 90% field population accuracy
-- ✓ Zero data loss
-- ✓ Correct categorization
-- ✓ Manual override support
-- ✓ Real-time updates
-
-### 8.3 Suggestions
-- ✓ 80% relevance rate
-- ✓ Non-intrusive UI
-- ✓ Adaptive learning (5 iterations)
-- ✓ Optional disable
-- ✓ < 500ms response time
-
-### 8.4 Multi-Language
-- ✓ 80% translation accuracy (4/5 validated)
-- ✓ Medical terms preserved
-- ✓ Proper script rendering
-- ✓ Grammar correctness
-- ✓ Fallback mechanism
-
-### 8.5 Authentication
-- ✓ Successful registration/login
-- ✓ Secure password storage
-- ✓ JWT validation
-- ✓ Token expiration handling
-- ✓ Data isolation
-
-### 8.6 PDF Generation
-- ✓ All fields present
-- ✓ Consistent formatting
-- ✓ Font size ≥ 11pt
-- ✓ < 3 second generation
-- ✓ < 200KB file size
-- ✓ Print-ready output
-
-### 8.7 Performance
-- ✓ 50 concurrent users
-- ✓ 99.5% uptime
-- ✓ < 300ms UI response
-- ✓ Auto-scaling functional
-- ✓ Zero data loss
-
-### 8.8 Security
-- ✓ HTTPS everywhere
-- ✓ Encryption at rest
-- ✓ Audit logging
-- ✓ No cross-user access
-- ✓ Secure secrets management
-
----
-
-## 9. Constraints & Assumptions
-
-### 9.1 Constraints
+### 7.1 Constraints
 
 **Technical**:
 - Must use AWS cloud services
@@ -765,27 +631,27 @@ To provide doctors with an AI-powered voice assistant that:
 
 ---
 
-## 10. Success Metrics
+## 8. Success Metrics
 
-### 10.1 User Adoption
+### 8.1 User Adoption
 - 100+ active doctors within 6 months
 - 1000+ prescriptions generated per month
 - 70% daily active user rate
 - < 5% user churn rate
 
-### 10.2 Performance Metrics
+### 8.2 Performance Metrics
 - 95% transcription accuracy (user-reported)
 - < 2 minute average prescription time
 - 99.5% system uptime
 - < 1% error rate
 
-### 10.3 Business Metrics
+### 8.3 Business Metrics
 - 70% reduction in prescription writing time
 - 90% user satisfaction score
 - 50% reduction in prescription errors
 - Positive ROI within 12 months
 
-### 10.4 Quality Metrics
+### 8.4 Quality Metrics
 - Zero security breaches
 - Zero data loss incidents
 - < 10 critical bugs per release
@@ -793,9 +659,9 @@ To provide doctors with an AI-powered voice assistant that:
 
 ---
 
-## 11. Risks & Mitigation
+## 9. Risks & Mitigation
 
-### 11.1 Technical Risks
+### 9.1 Technical Risks
 
 **Risk**: Transcription accuracy insufficient
 - **Mitigation**: Custom vocabulary, user feedback loop, manual correction
@@ -806,7 +672,7 @@ To provide doctors with an AI-powered voice assistant that:
 **Risk**: Performance degradation under load
 - **Mitigation**: Auto-scaling, load testing, performance monitoring
 
-### 11.2 Business Risks
+### 9.2 Business Risks
 
 **Risk**: Low user adoption
 - **Mitigation**: User training, onboarding support, iterative improvements
