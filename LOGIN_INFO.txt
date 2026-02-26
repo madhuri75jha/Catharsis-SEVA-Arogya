@@ -1,0 +1,36 @@
+╔══════════════════════════════════════════════════════════════╗
+║           SEVA AROGYA - LOGIN CREDENTIALS                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+📧 DEFAULT CREDENTIALS:
+
+   1. Doctor Account
+      Email:    doctor@hospital.com
+      Password: password123
+
+   2. Admin Account
+      Email:    admin@seva.com
+      Password: admin123
+
+   3. Demo Account
+      Email:    demo@demo.com
+      Password: demo
+
+   4. Any Credentials (Demo Mode)
+      Email:    [any email]
+      Password: [any password]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 QUICK START:
+
+   1. Run: python app.py
+   2. Open: http://localhost:5000
+   3. Login with any credentials above
+   4. Start using the application!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  NOTE: Demo mode - accepts any email/password for testing
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

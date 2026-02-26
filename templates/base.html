@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>{% block title %}SEVA Arogya{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+    
+    <!-- Tailwind Config -->
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#127ae2",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <!-- Base Styles -->
+    <style type="text/tailwindcss">
+        body { 
+            font-family: 'Lexend', sans-serif; 
+        }
+        .ios-input {
+            @apply w-full bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl py-4 px-4 text-base text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none;
+        }
+        .glow-effect {
+            box-shadow: 0 0 40px 10px rgba(18, 122, 226, 0.15);
+        }
+        .recording-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .rx-watermark {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 80px;
+            font-weight: 700;
+            color: rgba(18, 122, 226, 0.05);
+            pointer-events: none;
+            user-select: none;
+        }
+    </style>
+    
+    <style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+    {% block content %}{% endblock %}
+    
+    <!-- Background Decoration for Desktop Viewing -->
+    <div class="fixed inset-0 -z-10 bg-background-light dark:bg-background-dark hidden md:block">
+        <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
+    </div>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
