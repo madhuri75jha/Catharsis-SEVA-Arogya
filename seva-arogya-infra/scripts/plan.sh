@@ -7,15 +7,18 @@ echo "========================================="
 echo "Creating Terraform Plan"
 echo "========================================="
 
-# Check if .env file exists
-if [ ! -f .env ]; then
-    echo "Warning: .env file not found"
-    echo "Please create .env from .env.example and configure your variables"
+# Check if .env file exists (shared at repo root)
+ENV_FILE="${ENV_FILE:-../.env}"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Warning: $ENV_FILE file not found"
+    echo "Please create .env from .env.example at the repo root and configure your variables"
     exit 1
 fi
 
 # Load environment variables from .env
-export $(grep -v '^#' .env | xargs)
+set -a
+source "$ENV_FILE"
+set +a
 
 # Create plan file
 echo ""
@@ -24,7 +27,6 @@ terraform plan \
   -var="aws_region=${AWS_REGION:-us-east-1}" \
   -var="project_name=${PROJECT_NAME:-seva-arogya}" \
   -var="env_name=${ENV_NAME:-dev}" \
-  -var="enable_cloudfront=${ENABLE_CLOUDFRONT:-true}" \
   -var="enable_https=${ENABLE_HTTPS:-false}" \
   -var="container_image=${CONTAINER_IMAGE:-nginx:latest}" \
   -var="db_name=${DB_NAME}" \
@@ -32,7 +34,8 @@ terraform plan \
   -var="db_password=${DB_PASSWORD}" \
   -var="flask_secret_key=${FLASK_SECRET_KEY}" \
   -var="jwt_secret=${JWT_SECRET}" \
-  -var="cors_origins=[\"${CORS_ORIGINS}\"]" \
+  -var="log_level=${LOG_LEVEL:-INFO}" \
+  -var="cors_origins=[\"${CORS_ALLOWED_ORIGINS}\"]" \
   -out=tfplan
 
 echo ""

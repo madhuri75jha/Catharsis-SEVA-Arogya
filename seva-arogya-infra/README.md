@@ -9,8 +9,7 @@ This infrastructure provisions:
 - **ECS Fargate**: Flask API backend with 0.5 vCPU / 1GB memory
 - **RDS PostgreSQL**: Single-AZ db.t4g.micro instance with 20GB storage
 - **ALB**: Application Load Balancer for API traffic
-- **S3**: Buckets for PDF storage and frontend static assets
-- **CloudFront**: CDN for React SPA (optional, enabled by default)
+- **S3**: Buckets for audio and PDF storage
 - **Cognito**: User Pool for authentication
 - **Secrets Manager**: Secure storage for database credentials and app secrets
 - **IAM**: Least-privilege roles for ECS tasks
@@ -30,11 +29,11 @@ This infrastructure provisions:
 git clone <repository-url> seva-arogya-infra
 cd seva-arogya-infra
 
-# Copy environment template
-cp .env.example .env
+# Copy environment template (at repo root)
+cp ../.env.example ../.env
 
 # Edit .env with your values
-nano .env
+nano ../.env
 ```
 
 ### 2. Initialize Terraform
@@ -59,7 +58,7 @@ This will take 10-15 minutes. Note the outputs - you'll need them for deployment
 
 ## Environment Variables
 
-Configure these in `.env` before running Terraform:
+Configure these in the repo root `.env` before running Terraform:
 
 ```bash
 # AWS Configuration
@@ -70,7 +69,6 @@ PROJECT_NAME=seva-arogya
 ENV_NAME=dev
 
 # Feature Toggles
-ENABLE_CLOUDFRONT=true
 ENABLE_HTTPS=false
 
 # Container Image (update after pushing to ECR)
@@ -86,7 +84,10 @@ FLASK_SECRET_KEY=<32-char-random-string>
 JWT_SECRET=<32-char-random-string>
 
 # CORS Origins (comma-separated)
-CORS_ORIGINS=http://localhost:3000,http://localhost:5000
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5000
+
+# Logging
+LOG_LEVEL=INFO
 ```
 
 ## Deployment Workflow
@@ -107,7 +108,7 @@ ECR_URL=$(terraform output -raw ecr_repository_url)
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_URL
 
 # Build Docker image (from your backend directory)
-cd ../seva-arogya-backend
+cd ..
 docker build -t seva-arogya-backend .
 
 # Tag and push to ECR
@@ -137,32 +138,6 @@ aws ecs describe-services \
   --query 'services[0].deployments'
 ```
 
-### Step 4: Deploy Frontend to S3
-
-```bash
-# Get frontend bucket name from Terraform output
-FRONTEND_BUCKET=$(terraform output -raw frontend_bucket_name)
-
-# Build React app (from your frontend directory)
-cd ../seva-arogya-frontend
-npm run build
-
-# Upload to S3
-aws s3 sync build/ s3://$FRONTEND_BUCKET/ --delete
-```
-
-### Step 5: Invalidate CloudFront Cache (if enabled)
-
-```bash
-# Get CloudFront distribution ID from Terraform output
-CF_DIST_ID=$(terraform output -raw cloudfront_domain_name | cut -d'.' -f1)
-
-# Create invalidation
-aws cloudfront create-invalidation \
-  --distribution-id $CF_DIST_ID \
-  --paths "/*"
-```
-
 ## Accessing Your Application
 
 After deployment, get the URLs:
@@ -170,12 +145,6 @@ After deployment, get the URLs:
 ```bash
 # API endpoint
 terraform output api_base_url
-
-# Frontend URL (if CloudFront enabled)
-terraform output cloudfront_domain_name
-
-# Or use S3 bucket directly
-terraform output frontend_bucket_name
 ```
 
 ## Updating the Application
@@ -194,21 +163,6 @@ aws ecs update-service \
   --service seva-arogya-dev-api \
   --force-new-deployment \
   --region us-east-1
-```
-
-### Update Frontend Code
-
-```bash
-# Rebuild React app
-npm run build
-
-# Upload to S3
-aws s3 sync build/ s3://$FRONTEND_BUCKET/ --delete
-
-# Invalidate CloudFront cache
-aws cloudfront create-invalidation \
-  --distribution-id $CF_DIST_ID \
-  --paths "/*"
 ```
 
 ## Remote State (Optional)
@@ -254,16 +208,14 @@ Approximate monthly costs for dev environment (us-east-1):
 - **RDS db.t4g.micro**: ~$12/month (single-AZ)
 - **ECS Fargate** (0.5 vCPU, 1GB): ~$15/month (24/7)
 - **ALB**: ~$16/month + LCU charges
-- **CloudFront**: ~$1-5/month (low traffic)
 - **S3**: <$1/month (low storage)
 - **Secrets Manager**: ~$1.20/month (3 secrets)
 
-**Total**: ~$77-85/month
+**Total**: ~$72-80/month
 
 **Cost Optimization Tips**:
 - Stop RDS instance when not in use: `aws rds stop-db-instance --db-instance-identifier seva-arogya-dev-db`
 - Scale ECS to 0 tasks when not in use: `aws ecs update-service --cluster seva-arogya-dev-cluster --service seva-arogya-dev-api --desired-count 0`
-- Disable CloudFront if not needed: Set `enable_cloudfront = false`
 
 ## Troubleshooting
 
@@ -340,7 +292,6 @@ seva-arogya-infra/
 │   ├── ecs/            # ECS cluster, service, task definition
 │   ├── rds/            # PostgreSQL database
 │   ├── s3/             # S3 buckets
-│   ├── cloudfront/     # CloudFront distribution
 │   ├── cognito/        # Cognito User Pool
 │   ├── iam/            # IAM roles and policies
 │   └── secrets/        # Secrets Manager
@@ -358,7 +309,6 @@ seva-arogya-infra/
 - Secrets stored in Secrets Manager, not in code
 - IAM roles follow least-privilege principle
 - All data encrypted at rest (S3, RDS, Secrets Manager)
-- HTTPS enforced on CloudFront
 - Security groups implement defense-in-depth
 
 ## Support

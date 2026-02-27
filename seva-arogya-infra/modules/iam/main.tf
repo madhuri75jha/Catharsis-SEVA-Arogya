@@ -127,9 +127,25 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
       {
         Effect = "Allow"
         Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.s3_audio_bucket_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "s3:ListBucket"
         ]
         Resource = var.s3_pdf_bucket_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.s3_audio_bucket_arn
       }
     ]
   })
@@ -153,6 +169,25 @@ resource "aws_iam_role_policy" "ecs_task_medical_ai" {
           "translate:TranslateText"
         ]
         Resource = "*"
+      }
+    ]
+  })
+}
+
+# ECS Task Role Policy - Secrets Manager
+resource "aws_iam_role_policy" "ecs_task_secrets" {
+  name = "secrets-manager"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = var.secrets_arns
       }
     ]
   })

@@ -77,6 +77,12 @@ variable "cors_origins" {
   default     = ["http://localhost:3000"]
 }
 
+variable "log_level" {
+  description = "Application log level"
+  type        = string
+  default     = "INFO"
+}
+
 variable "frontend_build_path" {
   description = "Path to frontend build directory (for documentation purposes)"
   type        = string

@@ -38,16 +38,16 @@ module "s3_pdf" {
   env_name             = var.env_name
 }
 
-# S3 Frontend Bucket Module
-module "s3_frontend" {
+# S3 Audio Bucket Module
+module "s3_audio" {
   source = "./modules/s3"
 
-  bucket_name          = local.frontend_bucket_name
+  bucket_name          = local.audio_bucket_name
   enable_versioning    = false
   enable_encryption    = true
   block_public_access  = true
-  cors_allowed_origins = []
-  cors_allowed_methods = ["GET"]
+  cors_allowed_origins = var.cors_origins
+  cors_allowed_methods = ["GET", "PUT", "POST", "DELETE"]
   project_name         = var.project_name
   env_name             = var.env_name
 }
@@ -132,6 +132,7 @@ module "iam" {
   env_name           = var.env_name
   ecr_repository_arn = module.ecs.ecr_repository_arn
   s3_pdf_bucket_arn  = module.s3_pdf.bucket_arn
+  s3_audio_bucket_arn = module.s3_audio.bucket_arn
   log_group_arn      = module.ecs.log_group_arn
   secrets_arns = [
     module.secrets.db_secret_arn,
@@ -160,12 +161,17 @@ module "ecs" {
   alb_security_group_id  = module.alb.security_group_id
 
   environment_variables = {
-    FLASK_ENV            = var.env_name
-    AWS_DEFAULT_REGION   = var.aws_region
-    COGNITO_USER_POOL_ID = module.cognito.user_pool_id
-    COGNITO_CLIENT_ID    = module.cognito.app_client_id
-    S3_PDF_BUCKET        = module.s3_pdf.bucket_id
-    CORS_ORIGINS         = join(",", var.cors_origins)
+    FLASK_ENV              = var.env_name
+    LOG_LEVEL              = var.log_level
+    AWS_REGION             = var.aws_region
+    AWS_COGNITO_USER_POOL_ID = module.cognito.user_pool_id
+    AWS_COGNITO_CLIENT_ID    = module.cognito.app_client_id
+    S3_AUDIO_BUCKET        = module.s3_audio.bucket_id
+    S3_PDF_BUCKET          = module.s3_pdf.bucket_id
+    DB_SECRET_NAME         = module.secrets.db_secret_name
+    FLASK_SECRET_NAME      = module.secrets.flask_secret_name
+    JWT_SECRET_NAME        = module.secrets.jwt_secret_name
+    CORS_ALLOWED_ORIGINS   = join(",", var.cors_origins)
   }
 
   secrets = [
@@ -206,17 +212,3 @@ module "ecs" {
   depends_on = [module.iam, module.alb]
 }
 
-# CloudFront Module (conditional)
-module "cloudfront" {
-  count  = var.enable_cloudfront ? 1 : 0
-  source = "./modules/cloudfront"
-
-  enabled              = true
-  origin_bucket_id     = module.s3_frontend.bucket_id
-  origin_bucket_domain = module.s3_frontend.bucket_regional_domain_name
-  origin_bucket_arn    = module.s3_frontend.bucket_arn
-  default_root_object  = "index.html"
-  price_class          = "PriceClass_100"
-  project_name         = var.project_name
-  env_name             = var.env_name
-}

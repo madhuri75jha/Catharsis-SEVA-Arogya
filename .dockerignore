@@ -1,0 +1,15 @@
+.git
+.gitignore
+.vscode
+.kiro
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.log
+.env
+seva-arogya-infra
+screens

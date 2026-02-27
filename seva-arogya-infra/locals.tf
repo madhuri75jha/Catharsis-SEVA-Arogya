@@ -29,6 +29,6 @@ locals {
   db_port       = 5432
 
   # S3 bucket names (must be globally unique)
-  pdf_bucket_name      = "${var.project_name}-${var.env_name}-pdf-${data.aws_caller_identity.current.account_id}"
-  frontend_bucket_name = "${var.project_name}-${var.env_name}-frontend-${data.aws_caller_identity.current.account_id}"
+  pdf_bucket_name   = "${var.project_name}-${var.env_name}-pdf-${data.aws_caller_identity.current.account_id}"
+  audio_bucket_name = "${var.project_name}-${var.env_name}-audio-${data.aws_caller_identity.current.account_id}"
 }

@@ -8,14 +8,9 @@ output "api_base_url" {
   value       = var.enable_https ? "https://${module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
 }
 
-output "cloudfront_domain_name" {
-  description = "CloudFront distribution domain name (if enabled)"
-  value       = var.enable_cloudfront ? module.cloudfront[0].domain_name : "CloudFront not enabled"
-}
-
-output "frontend_bucket_name" {
-  description = "S3 bucket name for frontend static assets"
-  value       = module.s3_frontend.bucket_id
+output "audio_bucket_name" {
+  description = "S3 bucket name for audio storage"
+  value       = module.s3_audio.bucket_id
 }
 
 output "pdf_bucket_name" {
@@ -36,6 +31,21 @@ output "cognito_user_pool_id" {
 output "cognito_client_id" {
   description = "Cognito App Client ID"
   value       = module.cognito.app_client_id
+}
+
+output "db_secret_name" {
+  description = "Secrets Manager name for database credentials"
+  value       = module.secrets.db_secret_name
+}
+
+output "flask_secret_name" {
+  description = "Secrets Manager name for Flask secret key"
+  value       = module.secrets.flask_secret_name
+}
+
+output "jwt_secret_name" {
+  description = "Secrets Manager name for JWT secret"
+  value       = module.secrets.jwt_secret_name
 }
 
 output "ecr_repository_url" {

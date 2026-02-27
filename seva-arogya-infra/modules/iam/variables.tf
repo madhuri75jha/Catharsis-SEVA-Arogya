@@ -18,6 +18,11 @@ variable "s3_pdf_bucket_arn" {
   type        = string
 }
 
+variable "s3_audio_bucket_arn" {
+  description = "ARN of the S3 audio bucket"
+  type        = string
+}
+
 variable "log_group_arn" {
   description = "ARN of the CloudWatch log group"
   type        = string
