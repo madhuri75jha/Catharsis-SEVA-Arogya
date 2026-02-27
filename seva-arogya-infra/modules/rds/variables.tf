@@ -6,7 +6,8 @@ variable "identifier" {
 variable "engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "15.3"
+  default     = null
+  nullable    = true
 }
 
 variable "instance_class" {
@@ -48,10 +49,9 @@ variable "private_subnet_ids" {
   type        = list(string)
 }
 
-variable "allowed_security_groups" {
-  description = "List of security group IDs allowed to access RDS"
+variable "allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to access RDS"
   type        = list(string)
-  default     = []
 }
 
 variable "backup_retention_period" {

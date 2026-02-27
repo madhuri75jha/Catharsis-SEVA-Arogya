@@ -1,9 +1,10 @@
 """Authentication Manager for AWS Cognito"""
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from botocore.exceptions import ClientError
 from .base_client import BaseAWSClient
+from utils.error_handler import get_user_friendly_message
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class AuthManager(BaseAWSClient):
         self.client_secret = client_secret
         logger.info(f"Auth manager initialized with user_pool_id={user_pool_id}")
     
-    def authenticate(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+    def authenticate(self, username: str, password: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, str]]]:
         """
         Authenticate user with Cognito using USER_PASSWORD_AUTH flow
         
@@ -36,7 +37,8 @@ class AuthManager(BaseAWSClient):
             password: User's password
             
         Returns:
-            Dictionary with tokens (access_token, id_token, refresh_token) or None
+            Tuple of (tokens, error). Tokens is a dict with access_token, id_token, refresh_token on success.
+            Error is a dict with code and message on failure.
         """
         start_time = time.time()
         
@@ -78,10 +80,25 @@ class AuthManager(BaseAWSClient):
                 self._log_success('authenticate', duration_ms=duration_ms, username=username)
                 logger.info(f"User authenticated successfully: {username}")
                 
-                return tokens
-            else:
-                logger.warning(f"Authentication response missing AuthenticationResult for user: {username}")
-                return None
+                return tokens, None
+
+            if 'ChallengeName' in response:
+                challenge = response['ChallengeName']
+                if challenge == 'NEW_PASSWORD_REQUIRED':
+                    return None, {
+                        'code': challenge,
+                        'message': 'Your account requires a new password. Please reset your password or ask an admin to set a permanent password.'
+                    }
+                return None, {
+                    'code': challenge,
+                    'message': 'Additional authentication steps are required. Please contact support.'
+                }
+
+            logger.warning(f"Authentication response missing AuthenticationResult for user: {username}")
+            return None, {
+                'code': 'AUTH_FAILED',
+                'message': 'Authentication failed. Please try again.'
+            }
                 
         except ClientError as e:
             error_code = e.response['Error']['Code']
@@ -96,11 +113,18 @@ class AuthManager(BaseAWSClient):
                 logger.warning(f"Authentication failed for user {username}: User not confirmed")
             else:
                 logger.error(f"Authentication failed for user {username}: {error_code}")
-            
-            return None
+
+            if error_code == 'UserNotConfirmedException':
+                message = 'Your account is not verified. Please confirm your email before logging in.'
+            elif error_code == 'PasswordResetRequiredException':
+                message = 'Password reset required. Please use the forgot password flow.'
+            else:
+                message = get_user_friendly_message(e)
+
+            return None, {'code': error_code, 'message': message}
         except Exception as e:
             logger.error(f"Unexpected error during authentication: {str(e)}")
-            return None
+            return None, {'code': 'INTERNAL_ERROR', 'message': 'An unexpected error occurred. Please try again.'}
     
     def register(self, email: str, password: str, attributes: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
         """
@@ -223,6 +247,96 @@ class AuthManager(BaseAWSClient):
         except Exception as e:
             logger.error(f"Unexpected error during user verification: {str(e)}")
             return False
+
+    def forgot_password(self, username: str) -> Tuple[bool, Optional[Dict[str, str]]]:
+        """
+        Start forgot password flow (sends verification code)
+        
+        Args:
+            username: User's email/username
+            
+        Returns:
+            Tuple of (success, error). Error is a dict with code and message on failure.
+        """
+        try:
+            self._log_operation('forgot_password', username=username)
+            
+            params = {
+                'ClientId': self.client_id,
+                'Username': username
+            }
+            
+            if self.client_secret:
+                import hmac
+                import hashlib
+                import base64
+                message = bytes(username + self.client_id, 'utf-8')
+                secret = bytes(self.client_secret, 'utf-8')
+                secret_hash = base64.b64encode(hmac.new(secret, message, digestmod=hashlib.sha256).digest()).decode()
+                params['SecretHash'] = secret_hash
+            
+            self.client.forgot_password(**params)
+            
+            self._log_success('forgot_password', username=username)
+            logger.info(f"Forgot password initiated for user: {username}")
+            
+            return True, None
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            self._log_error('forgot_password', e, username=username)
+            message = get_user_friendly_message(e)
+            return False, {'code': error_code, 'message': message}
+        except Exception as e:
+            logger.error(f"Unexpected error during forgot password: {str(e)}")
+            return False, {'code': 'INTERNAL_ERROR', 'message': 'An unexpected error occurred. Please try again.'}
+
+    def confirm_forgot_password(self, username: str, confirmation_code: str, new_password: str) -> Tuple[bool, Optional[Dict[str, str]]]:
+        """
+        Confirm forgot password with verification code and new password
+        
+        Args:
+            username: User's email/username
+            confirmation_code: Verification code sent to user's email
+            new_password: New password
+            
+        Returns:
+            Tuple of (success, error). Error is a dict with code and message on failure.
+        """
+        try:
+            self._log_operation('confirm_forgot_password', username=username)
+            
+            params = {
+                'ClientId': self.client_id,
+                'Username': username,
+                'ConfirmationCode': confirmation_code,
+                'Password': new_password
+            }
+            
+            if self.client_secret:
+                import hmac
+                import hashlib
+                import base64
+                message = bytes(username + self.client_id, 'utf-8')
+                secret = bytes(self.client_secret, 'utf-8')
+                secret_hash = base64.b64encode(hmac.new(secret, message, digestmod=hashlib.sha256).digest()).decode()
+                params['SecretHash'] = secret_hash
+            
+            self.client.confirm_forgot_password(**params)
+            
+            self._log_success('confirm_forgot_password', username=username)
+            logger.info(f"Password reset confirmed for user: {username}")
+            
+            return True, None
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            self._log_error('confirm_forgot_password', e, username=username)
+            message = get_user_friendly_message(e)
+            return False, {'code': error_code, 'message': message}
+        except Exception as e:
+            logger.error(f"Unexpected error during confirm forgot password: {str(e)}")
+            return False, {'code': 'INTERNAL_ERROR', 'message': 'An unexpected error occurred. Please try again.'}
     
     def refresh_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
         """

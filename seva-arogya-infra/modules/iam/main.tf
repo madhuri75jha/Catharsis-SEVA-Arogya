@@ -58,7 +58,7 @@ resource "aws_iam_role_policy" "ecs_execution_logs" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "${var.log_group_arn}:*"
+        Resource = "*"
       }
     ]
   })
@@ -77,7 +77,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = var.secrets_arns
+        Resource = "*"
       }
     ]
   })
@@ -187,7 +187,7 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = var.secrets_arns
+        Resource = "*"
       }
     ]
   })

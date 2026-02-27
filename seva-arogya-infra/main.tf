@@ -57,7 +57,7 @@ module "rds" {
   source = "./modules/rds"
 
   identifier              = local.db_identifier
-  engine_version          = "15.3"
+  engine_version          = var.db_engine_version != "" ? var.db_engine_version : null
   instance_class          = "db.t4g.micro"
   allocated_storage       = 20
   db_name                 = var.db_name
@@ -65,7 +65,7 @@ module "rds" {
   master_password         = var.db_password
   vpc_id                  = module.vpc.vpc_id
   private_subnet_ids      = module.vpc.private_subnet_ids
-  allowed_security_groups = [module.ecs.security_group_id]
+  allowed_cidr_blocks     = local.private_subnet_cidrs
   backup_retention_period = 1
   multi_az                = false
   skip_final_snapshot     = true
@@ -130,15 +130,8 @@ module "iam" {
 
   project_name       = var.project_name
   env_name           = var.env_name
-  ecr_repository_arn = module.ecs.ecr_repository_arn
   s3_pdf_bucket_arn  = module.s3_pdf.bucket_arn
   s3_audio_bucket_arn = module.s3_audio.bucket_arn
-  log_group_arn      = module.ecs.log_group_arn
-  secrets_arns = [
-    module.secrets.db_secret_arn,
-    module.secrets.flask_secret_arn,
-    module.secrets.jwt_secret_arn
-  ]
 }
 
 # ECS Module

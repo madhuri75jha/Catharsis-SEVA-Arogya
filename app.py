@@ -216,7 +216,7 @@ def api_login():
             return jsonify({'success': False, 'message': 'Email and password required'}), 400
         
         # Authenticate with Cognito
-        tokens = auth_manager.authenticate(email, password)
+        tokens, auth_error = auth_manager.authenticate(email, password)
         
         if tokens:
             # Store tokens in session
@@ -236,7 +236,9 @@ def api_login():
             return jsonify({'success': True, 'message': 'Login successful'})
         else:
             logger.warning(f"Login failed for user: {email}")
-            return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+            message = auth_error['message'] if auth_error else 'Invalid credentials'
+            error_code = auth_error['code'] if auth_error else None
+            return jsonify({'success': False, 'message': message, 'error_code': error_code}), 401
             
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
@@ -304,6 +306,62 @@ def api_verify():
     except Exception as e:
         logger.error(f"Verification error: {str(e)}")
         return jsonify({'success': False, 'message': 'An error occurred during verification'}), 500
+
+
+@app.route('/api/v1/auth/forgot-password', methods=['POST'])
+def api_forgot_password():
+    """API endpoint to start forgot password flow"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        data = request.get_json()
+        email = data.get('email', '')
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email required'}), 400
+        
+        success, auth_error = auth_manager.forgot_password(email)
+        
+        if success:
+            logger.info(f"Forgot password initiated for user: {email}")
+            return jsonify({'success': True, 'message': 'Verification code sent to your email.'})
+        else:
+            message = auth_error['message'] if auth_error else 'Failed to send verification code.'
+            error_code = auth_error['code'] if auth_error else None
+            return jsonify({'success': False, 'message': message, 'error_code': error_code}), 400
+            
+    except Exception as e:
+        logger.error(f"Forgot password error: {str(e)}")
+        return jsonify({'success': False, 'message': 'An error occurred during password reset.'}), 500
+
+
+@app.route('/api/v1/auth/confirm-forgot-password', methods=['POST'])
+def api_confirm_forgot_password():
+    """API endpoint to confirm forgot password with code and new password"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        data = request.get_json()
+        email = data.get('email', '')
+        code = data.get('code', '')
+        new_password = data.get('new_password', '')
+        
+        if not email or not code or not new_password:
+            return jsonify({'success': False, 'message': 'Email, verification code, and new password required'}), 400
+        
+        success, auth_error = auth_manager.confirm_forgot_password(email, code, new_password)
+        
+        if success:
+            logger.info(f"Password reset confirmed for user: {email}")
+            return jsonify({'success': True, 'message': 'Password reset successful. You can now login.'})
+        else:
+            message = auth_error['message'] if auth_error else 'Password reset failed.'
+            error_code = auth_error['code'] if auth_error else None
+            return jsonify({'success': False, 'message': message, 'error_code': error_code}), 400
+            
+    except Exception as e:
+        logger.error(f"Confirm forgot password error: {str(e)}")
+        return jsonify({'success': False, 'message': 'An error occurred during password reset.'}), 500
 
 
 @app.route('/api/v1/auth/logout', methods=['POST'])

@@ -78,6 +78,8 @@ CONTAINER_IMAGE=<account-id>.dkr.ecr.us-east-1.amazonaws.com/seva-arogya-dev-bac
 DB_NAME=sevaarogya
 DB_USERNAME=sevaadmin
 DB_PASSWORD=<secure-password-min-8-chars>
+# Optional: leave empty to use AWS default engine version
+DB_ENGINE_VERSION=
 
 # Application Secrets (generate secure random strings)
 FLASK_SECRET_KEY=<32-char-random-string>

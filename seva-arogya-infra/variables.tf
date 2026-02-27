@@ -46,6 +46,12 @@ variable "db_name" {
   default     = "sevaarogya"
 }
 
+variable "db_engine_version" {
+  description = "PostgreSQL engine version (leave empty to use AWS default)"
+  type        = string
+  default     = ""
+}
+
 variable "db_username" {
   description = "PostgreSQL master username"
   type        = string

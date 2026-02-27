@@ -20,8 +20,8 @@ resource "aws_security_group" "rds" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = var.allowed_security_groups
-    description     = "Allow PostgreSQL from ECS"
+    cidr_blocks     = var.allowed_cidr_blocks
+    description     = "Allow PostgreSQL from private subnets"
   }
 
   egress {

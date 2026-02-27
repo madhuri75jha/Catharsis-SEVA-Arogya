@@ -30,6 +30,7 @@ terraform plan \
   -var="enable_https=${ENABLE_HTTPS:-false}" \
   -var="container_image=${CONTAINER_IMAGE:-nginx:latest}" \
   -var="db_name=${DB_NAME}" \
+  -var="db_engine_version=${DB_ENGINE_VERSION:-}" \
   -var="db_username=${DB_USERNAME}" \
   -var="db_password=${DB_PASSWORD}" \
   -var="flask_secret_key=${FLASK_SECRET_KEY}" \
