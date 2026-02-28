@@ -89,6 +89,25 @@ variable "log_level" {
   default     = "INFO"
 }
 
+variable "enable_execute_command" {
+  description = "Enable ECS Exec for the ECS service"
+  type        = bool
+  default     = true
+}
+
+variable "log_view_token" {
+  description = "Token required to access /debug/logs"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "log_file_path" {
+  description = "Path to application log file in the container"
+  type        = string
+  default     = "logs/app.log"
+}
+
 variable "frontend_build_path" {
   description = "Path to frontend build directory (for documentation purposes)"
   type        = string

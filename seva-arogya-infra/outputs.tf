@@ -62,3 +62,12 @@ output "ecs_service_name" {
   description = "ECS service name"
   value       = module.ecs.service_name
 }
+output "transcribe_endpoint" {
+  description = "AWS Transcribe service endpoint URL"
+  value       = "https://transcribe.${var.aws_region}.amazonaws.com"
+}
+
+output "transcribe_streaming_endpoint" {
+  description = "AWS Transcribe streaming service endpoint URL"
+  value       = "https://transcribestreaming.${var.aws_region}.amazonaws.com"
+}

@@ -152,11 +152,15 @@ module "ecs" {
   execution_role_arn     = module.iam.ecs_execution_role_arn
   task_role_arn          = module.iam.ecs_task_role_arn
   alb_security_group_id  = module.alb.security_group_id
+  enable_execute_command = var.enable_execute_command
 
   environment_variables = {
     FLASK_ENV              = var.env_name
     LOG_LEVEL              = var.log_level
+    LOG_VIEW_TOKEN         = var.log_view_token
+    LOG_FILE_PATH          = var.log_file_path
     AWS_REGION             = var.aws_region
+    AWS_TRANSCRIBE_REGION  = var.aws_region
     AWS_COGNITO_USER_POOL_ID = module.cognito.user_pool_id
     AWS_COGNITO_CLIENT_ID    = module.cognito.app_client_id
     S3_AUDIO_BUCKET        = module.s3_audio.bucket_id

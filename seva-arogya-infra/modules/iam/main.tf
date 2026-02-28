@@ -164,6 +164,8 @@ resource "aws_iam_role_policy" "ecs_task_medical_ai" {
         Action = [
           "transcribe:StartMedicalTranscriptionJob",
           "transcribe:GetMedicalTranscriptionJob",
+          "transcribe:StartStreamTranscription",
+          "transcribe:StartMedicalStreamTranscription",
           "comprehendmedical:DetectEntitiesV2",
           "comprehendmedical:InferICD10CM",
           "translate:TranslateText"
@@ -186,6 +188,28 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ECS Exec (SSM Messages) permissions for task role
+resource "aws_iam_role_policy" "ecs_task_exec" {
+  name = "ecs-exec-ssm"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
         ]
         Resource = "*"
       }

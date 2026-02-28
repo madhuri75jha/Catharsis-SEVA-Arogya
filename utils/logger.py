@@ -1,9 +1,11 @@
 """Logging Configuration for CloudWatch Integration"""
 import logging
 import json
+import os
 import sys
 from datetime import datetime
 from typing import Any, Dict
+from logging.handlers import RotatingFileHandler
 
 
 class JSONFormatter(logging.Formatter):
@@ -92,6 +94,33 @@ def setup_logging(log_level: str = 'INFO', json_format: bool = True):
     
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
+
+    # Optional file handler (for temporary debug access)
+    log_file_path = os.getenv('LOG_FILE_PATH', 'logs/app.log')
+    if log_file_path:
+        try:
+            log_dir = os.path.dirname(log_file_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+
+            file_handler = RotatingFileHandler(
+                log_file_path,
+                maxBytes=5 * 1024 * 1024,
+                backupCount=3,
+                encoding='utf-8'
+            )
+            file_handler.setLevel(numeric_level)
+
+            # Keep file logs human-readable even if console is JSON
+            file_formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            file_handler.setFormatter(file_formatter)
+            root_logger.addHandler(file_handler)
+            logging.info(f"File logging enabled at {log_file_path}")
+        except Exception as e:
+            logging.warning(f"Failed to enable file logging at {log_file_path}: {e}")
     
     # Suppress noisy third-party loggers
     logging.getLogger('boto3').setLevel(logging.WARNING)
@@ -99,6 +128,16 @@ def setup_logging(log_level: str = 'INFO', json_format: bool = True):
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     
     logging.info(f"Logging configured with level={log_level}, json_format={json_format}")
+
+
+def get_logger(name: str = None) -> logging.Logger:
+    """
+    Get a logger instance (wrapper for logging.getLogger).
+
+    Args:
+        name: Optional logger name
+    """
+    return logging.getLogger(name)
 
 
 class RequestIDContext:

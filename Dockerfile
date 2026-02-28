@@ -5,8 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Install system dependencies including ffmpeg for audio processing
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
+  && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -16,4 +19,5 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]
+# Use eventlet worker for WebSocket support
+CMD ["gunicorn", "-k", "eventlet", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "120", "--graceful-timeout", "120", "app:app"]

@@ -65,6 +65,9 @@ terraform_vars=(
   "-var=flask_secret_key=${FLASK_SECRET_KEY}"
   "-var=jwt_secret=${JWT_SECRET}"
   "-var=log_level=${LOG_LEVEL:-INFO}"
+  "-var=enable_execute_command=${ENABLE_EXECUTE_COMMAND:-true}"
+  "-var=log_view_token=${LOG_VIEW_TOKEN:-}"
+  "-var=log_file_path=${LOG_FILE_PATH:-logs/app.log}"
   "-var=cors_origins=[\"${CORS_ALLOWED_ORIGINS}\"]"
 )
 

@@ -3,11 +3,17 @@ SEVA Arogya - Flask Application
 Voice-enabled clinical note capture and prescription generation system
 """
 
+# Apply eventlet monkey patching FIRST (before any other imports)
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from functools import wraps
 import os
 import logging
+from collections import deque
 from dotenv import load_dotenv
 
 # Import AWS service managers
@@ -32,6 +38,9 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
+# Initialize SocketIO (will be configured in init_app)
+socketio = None
+
 # Global service managers (initialized in init_app)
 config_manager = None
 auth_manager = None
@@ -43,7 +52,7 @@ database_manager = None
 
 def init_app():
     """Initialize application with AWS services"""
-    global config_manager, auth_manager, storage_manager, transcribe_manager, comprehend_manager, database_manager
+    global config_manager, auth_manager, storage_manager, transcribe_manager, comprehend_manager, database_manager, socketio
     
     try:
         # Setup logging
@@ -77,6 +86,19 @@ def init_app():
         if cors_origins and cors_origins[0]:  # Check if not empty
             CORS(app, origins=cors_origins, supports_credentials=True)
             logger.info(f"CORS configured with origins: {cors_origins}")
+        
+        # Initialize SocketIO
+        socketio = SocketIO(
+            app,
+            cors_allowed_origins=cors_origins if cors_origins and cors_origins[0] else '*',
+            async_mode='eventlet',
+            ping_timeout=60,
+            ping_interval=25,
+            max_http_buffer_size=1024 * 1024,  # 1MB max message size
+            logger=False,
+            engineio_logger=False
+        )
+        logger.info("Flask-SocketIO initialized with eventlet async mode")
         
         # Initialize AWS service managers
         region = config_manager.get('aws_region')
@@ -120,9 +142,28 @@ def init_app():
                     logger.info("Database tables created/verified")
                 except Exception as e:
                     logger.error(f"Failed to create database tables: {str(e)}")
+                
+                # Run database migrations
+                try:
+                    from migrations.migration_manager import MigrationManager
+                    migration_manager = MigrationManager(database_manager)
+                    migration_success = migration_manager.run_migrations()
+                    
+                    if migration_success:
+                        logger.info("Database migrations completed successfully")
+                    else:
+                        logger.warning("Some database migrations failed - check logs for details")
+                except Exception as e:
+                    logger.error(f"Failed to run database migrations: {str(e)}")
+                    # Don't fail startup if migrations fail - allow app to start
+                    logger.warning("Application starting despite migration failures")
         else:
             logger.error("Database credentials not available")
             raise Exception("Database configuration failed")
+        
+        # Initialize SocketIO handlers
+        from socketio_handlers import init_socketio_handlers
+        init_socketio_handlers(socketio, database_manager, storage_manager, config_manager)
         
         logger.info("Application initialized successfully")
         
@@ -174,10 +215,53 @@ def index():
     return redirect(url_for('login'))
 
 
+def _get_request_data() -> dict:
+    """Safely parse JSON or form data from a request."""
+    data = request.get_json(silent=True)
+    if not data:
+        data = request.form.to_dict()
+    return data or {}
+
+
+def _read_log_tail(log_path: str, lines: int) -> str:
+    """Read last N lines from a log file."""
+    if lines <= 0:
+        return ""
+    with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+        return "".join(deque(f, maxlen=lines))
+
+
 @app.route('/login')
 def login():
     """Login page"""
     return render_template('login.html')
+
+
+@app.route('/debug/logs')
+def debug_logs():
+    """Temporary log viewer endpoint (protected by token)."""
+    token = os.getenv('LOG_VIEW_TOKEN')
+    provided = request.headers.get('X-Log-Token') or request.args.get('token')
+    if not token or provided != token:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    log_path = os.getenv('LOG_FILE_PATH', 'logs/app.log')
+    try:
+        lines = int(request.args.get('lines', '200'))
+    except ValueError:
+        lines = 200
+    lines = max(1, min(lines, 2000))
+
+    if not os.path.exists(log_path):
+        return jsonify({'success': False, 'message': f'Log file not found: {log_path}'}), 404
+
+    try:
+        content = _read_log_tail(log_path, lines)
+        return app.response_class(content, mimetype='text/plain')
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to read log file: {e}")
+        return jsonify({'success': False, 'message': 'Failed to read log file'}), 500
 
 
 @app.route('/home')
@@ -194,6 +278,13 @@ def transcription():
     return render_template('transcription.html')
 
 
+@app.route('/live-transcription')
+@login_required
+def live_transcription():
+    """Live transcription page - Real-time streaming transcription"""
+    return render_template('live_transcription.html')
+
+
 @app.route('/final-prescription')
 @login_required
 def final_prescription():
@@ -208,7 +299,7 @@ def api_login():
     logger = logging.getLogger(__name__)
     
     try:
-        data = request.get_json()
+        data = _get_request_data()
         email = data.get('email', '')
         password = data.get('password', '')
         
@@ -251,7 +342,7 @@ def api_register():
     logger = logging.getLogger(__name__)
     
     try:
-        data = request.get_json()
+        data = _get_request_data()
         email = data.get('email', '')
         password = data.get('password', '')
         name = data.get('name', '')
@@ -287,7 +378,7 @@ def api_verify():
     logger = logging.getLogger(__name__)
     
     try:
-        data = request.get_json()
+        data = _get_request_data()
         email = data.get('email', '')
         code = data.get('code', '')
         
@@ -314,7 +405,7 @@ def api_forgot_password():
     logger = logging.getLogger(__name__)
     
     try:
-        data = request.get_json()
+        data = _get_request_data()
         email = data.get('email', '')
         
         if not email:
@@ -341,7 +432,7 @@ def api_confirm_forgot_password():
     logger = logging.getLogger(__name__)
     
     try:
-        data = request.get_json()
+        data = _get_request_data()
         email = data.get('email', '')
         code = data.get('code', '')
         new_password = data.get('new_password', '')
@@ -667,6 +758,23 @@ def health_check():
             
             if not db_healthy:
                 health_status['status'] = 'unhealthy'
+            
+            # Check migration status
+            try:
+                from migrations.migration_manager import MigrationManager
+                migration_manager = MigrationManager(database_manager)
+                migration_status = migration_manager.get_migration_status()
+                health_status['checks']['migrations'] = {
+                    'status': migration_status.get('status', 'unknown'),
+                    'applied': migration_status.get('applied_count', 0),
+                    'pending': migration_status.get('pending_count', 0)
+                }
+                
+                if migration_status.get('pending_count', 0) > 0:
+                    health_status['checks']['migrations']['warning'] = 'Pending migrations detected'
+            except Exception as e:
+                health_status['checks']['migrations'] = 'error'
+                logger.error(f"Migration status check failed: {str(e)}")
         else:
             health_status['checks']['database'] = 'not_initialized'
             health_status['status'] = 'unhealthy'
@@ -711,8 +819,33 @@ def health_check():
 @app.teardown_appcontext
 def cleanup(error=None):
     """Cleanup resources on application shutdown"""
-    if database_manager:
-        database_manager.close_all_connections()
+    # Do not close the global connection pool per-request.
+    # Closing here causes "connection pool is closed" on subsequent requests.
+    if os.getenv('CLOSE_DB_ON_TEARDOWN', 'false').lower() in ('1', 'true', 'yes'):
+        if database_manager:
+            database_manager.close_all_connections()
+
+
+# Graceful shutdown handler
+def handle_shutdown(signum, frame):
+    """Handle shutdown signals for graceful cleanup"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"Received shutdown signal: {signum}")
+    
+    # Cleanup SocketIO resources
+    if socketio:
+        from socketio_handlers import shutdown_handler
+        shutdown_handler(socketio)
+    
+    # Exit
+    import sys
+    sys.exit(0)
+
+
+# Register signal handlers
+import signal
+signal.signal(signal.SIGTERM, handle_shutdown)
+signal.signal(signal.SIGINT, handle_shutdown)
 
 
 # Error handlers
@@ -727,4 +860,4 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)

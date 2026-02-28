@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,13 @@ class ConfigManager:
             'flask_secret_name': os.getenv('FLASK_SECRET_NAME'),
             'jwt_secret_name': os.getenv('JWT_SECRET_NAME'),
             'database_url': os.getenv('DATABASE_URL'),
+            'db_host': os.getenv('DB_HOST'),
+            'db_port': os.getenv('DB_PORT'),
+            'db_username': os.getenv('DB_USERNAME'),
+            'db_password': os.getenv('DB_PASSWORD'),
+            'db_name': os.getenv('DB_NAME'),
+            'flask_secret_key': os.getenv('FLASK_SECRET_KEY'),
+            'jwt_secret': os.getenv('JWT_SECRET'),
             'cors_allowed_origins': os.getenv('CORS_ALLOWED_ORIGINS', '').split(','),
             'log_level': os.getenv('LOG_LEVEL', 'INFO'),
         }
@@ -39,7 +47,17 @@ class ConfigManager:
     def _get_secrets_client(self):
         """Lazy initialization of Secrets Manager client"""
         if self._secrets_client is None:
-            self._secrets_client = boto3.client('secretsmanager', region_name=self.region)
+            # Keep Secrets Manager calls from blocking app startup too long
+            client_config = Config(
+                connect_timeout=3,
+                read_timeout=5,
+                retries={"max_attempts": 2}
+            )
+            self._secrets_client = boto3.client(
+                'secretsmanager',
+                region_name=self.region,
+                config=client_config
+            )
         return self._secrets_client
     
     def get_secret(self, secret_name: str, fallback_env_var: Optional[str] = None) -> Optional[Any]:
@@ -102,6 +120,16 @@ class ConfigManager:
         Returns:
             Dictionary with database connection parameters or None
         """
+        # Prefer directly provided environment variables (e.g. injected by ECS)
+        if self.config.get('db_host') and self.config.get('db_username') and self.config.get('db_password'):
+            return {
+                'host': self.config.get('db_host'),
+                'port': int(self.config.get('db_port') or 5432),
+                'username': self.config.get('db_username'),
+                'password': self.config.get('db_password'),
+                'database': self.config.get('db_name') or 'seva_arogya'
+            }
+
         db_secret_name = self.config.get('db_secret_name')
         if db_secret_name:
             secret = self.get_secret(db_secret_name)
@@ -123,6 +151,9 @@ class ConfigManager:
         Returns:
             Flask secret key string or None
         """
+        if self.config.get('flask_secret_key'):
+            return self.config.get('flask_secret_key')
+
         flask_secret_name = self.config.get('flask_secret_name')
         if flask_secret_name:
             secret = self.get_secret(flask_secret_name, fallback_env_var='SECRET_KEY')
@@ -138,6 +169,9 @@ class ConfigManager:
         Returns:
             JWT secret string or None
         """
+        if self.config.get('jwt_secret'):
+            return self.config.get('jwt_secret')
+
         jwt_secret_name = self.config.get('jwt_secret_name')
         if jwt_secret_name:
             secret = self.get_secret(jwt_secret_name)

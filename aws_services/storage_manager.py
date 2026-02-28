@@ -203,3 +203,54 @@ class StorageManager(BaseAWSClient):
             S3 URI string
         """
         return f"s3://{self.audio_bucket}/{s3_key}"
+
+    def upload_audio_bytes(self, audio_data: bytes, s3_key: str, content_type: str = 'audio/mpeg') -> bool:
+        """
+        Upload audio bytes directly to S3 (for streaming transcription)
+        
+        Args:
+            audio_data: Audio file data as bytes
+            s3_key: S3 object key (full path)
+            content_type: MIME type (default: audio/mpeg for MP3)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        start_time = time.time()
+        max_retries = 2
+        
+        for attempt in range(max_retries + 1):
+            try:
+                self._log_operation('upload_audio_bytes', bucket=self.audio_bucket, key=s3_key, attempt=attempt+1)
+                
+                # Upload to S3 with server-side encryption
+                self.client.put_object(
+                    Bucket=self.audio_bucket,
+                    Key=s3_key,
+                    Body=audio_data,
+                    ServerSideEncryption='AES256',
+                    ContentType=content_type
+                )
+                
+                duration_ms = (time.time() - start_time) * 1000
+                self._log_success('upload_audio_bytes', duration_ms=duration_ms, key=s3_key, size_bytes=len(audio_data))
+                
+                return True
+                
+            except ClientError as e:
+                self._log_error('upload_audio_bytes', e, attempt=attempt+1)
+                
+                if attempt < max_retries:
+                    # Exponential backoff: 2s, 4s
+                    wait_time = 2 ** (attempt + 1)
+                    logger.warning(f"Upload failed, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to upload audio bytes after {max_retries+1} attempts: {str(e)}")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Unexpected error uploading audio bytes: {str(e)}")
+                return False
+        
+        return False

@@ -102,3 +102,9 @@ variable "alb_security_group_id" {
   description = "Security group ID of the ALB"
   type        = string
 }
+
+variable "enable_execute_command" {
+  description = "Enable ECS Exec"
+  type        = bool
+  default     = true
+}
