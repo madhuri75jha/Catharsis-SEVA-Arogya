@@ -23,6 +23,7 @@ from aws_services.storage_manager import StorageManager
 from aws_services.transcribe_manager import TranscribeManager
 from aws_services.comprehend_manager import ComprehendManager
 from aws_services.database_manager import DatabaseManager
+from aws_services.connectivity_checker import AWSConnectivityChecker
 
 # Import models
 from models.prescription import Prescription
@@ -734,6 +735,54 @@ def api_download_prescription(prescription_id):
     except Exception as e:
         logger.error(f"Download URL generation error: {str(e)}")
         return jsonify({'success': False, 'message': 'An error occurred'}), 500
+
+
+# AWS Connectivity check endpoint
+@app.route('/health/aws-connectivity', methods=['GET'])
+def aws_connectivity_check():
+    """AWS connectivity check endpoint for deployment validation"""
+    logger = logging.getLogger(__name__)
+    import time
+    
+    try:
+        if not config_manager:
+            return jsonify({
+                'status': 'error',
+                'message': 'Configuration manager not initialized'
+            }), 503
+        
+        # Create connectivity checker
+        region = config_manager.get('aws_region')
+        check_timeout = config_manager.get('aws_connectivity_check_timeout', 5)
+        checker = AWSConnectivityChecker(region, check_timeout=check_timeout)
+        
+        # Prepare config for checks
+        check_config = {
+            'cognito_user_pool_id': config_manager.get('cognito_user_pool_id'),
+            'cognito_client_id': config_manager.get('cognito_client_id'),
+            's3_audio_bucket': config_manager.get('s3_audio_bucket'),
+            's3_pdf_bucket': config_manager.get('s3_pdf_bucket'),
+            'db_secret_name': config_manager.get('db_secret_name'),
+            'enable_comprehend_medical': config_manager.get('enable_comprehend_medical', True),
+            'comprehend_region': config_manager.get('aws_comprehend_region')
+        }
+        
+        # Run all checks
+        results = checker.run_all_checks(check_config)
+        
+        # Return appropriate status code
+        if results['overall_status'] == 'healthy':
+            return jsonify(results), 200
+        else:
+            return jsonify(results), 503
+            
+    except Exception as e:
+        logger.error(f"AWS connectivity check error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Connectivity check failed: {str(e)}',
+            'timestamp': time.time()
+        }), 503
 
 
 # Health check endpoint

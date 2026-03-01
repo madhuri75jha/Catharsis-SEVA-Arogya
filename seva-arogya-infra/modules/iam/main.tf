@@ -136,14 +136,16 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
       {
         Effect = "Allow"
         Action = [
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
         ]
         Resource = var.s3_pdf_bucket_arn
       },
       {
         Effect = "Allow"
         Action = [
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
         ]
         Resource = var.s3_audio_bucket_arn
       }
@@ -164,6 +166,7 @@ resource "aws_iam_role_policy" "ecs_task_medical_ai" {
         Action = [
           "transcribe:StartMedicalTranscriptionJob",
           "transcribe:GetMedicalTranscriptionJob",
+          "transcribe:ListTranscriptionJobs",
           "transcribe:StartStreamTranscription",
           "transcribe:StartMedicalStreamTranscription",
           "comprehendmedical:DetectEntitiesV2",
@@ -187,7 +190,27 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
       {
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue"
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ECS Task Role Policy - Cognito Access (for connectivity checks)
+resource "aws_iam_role_policy" "ecs_task_cognito" {
+  name = "cognito-access"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:DescribeUserPool"
         ]
         Resource = "*"
       }

@@ -18,6 +18,11 @@ output "private_subnet_ids" {
   value       = aws_subnet.private[*].id
 }
 
+output "private_route_table_id" {
+  description = "ID of the private route table"
+  value       = aws_route_table.private.id
+}
+
 output "nat_gateway_id" {
   description = "ID of the NAT Gateway"
   value       = var.enable_nat_gateway ? aws_nat_gateway.main[0].id : null

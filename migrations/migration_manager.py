@@ -41,7 +41,6 @@ class MigrationManager:
                 with conn.cursor() as cursor:
                     cursor.execute(create_table_sql)
                     conn.commit()
-            logger.info("Migrations tracking table ensured")
         except Exception as e:
             logger.error(f"Failed to create migrations table: {str(e)}")
             raise

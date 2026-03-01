@@ -161,6 +161,8 @@ module "ecs" {
     LOG_FILE_PATH          = var.log_file_path
     AWS_REGION             = var.aws_region
     AWS_TRANSCRIBE_REGION  = var.aws_region
+    AWS_COMPREHEND_REGION  = var.comprehend_region
+    EVENTLET_NO_GREENDNS   = "yes"
     AWS_COGNITO_USER_POOL_ID = module.cognito.user_pool_id
     AWS_COGNITO_CLIENT_ID    = module.cognito.app_client_id
     S3_AUDIO_BUCKET        = module.s3_audio.bucket_id
@@ -169,6 +171,7 @@ module "ecs" {
     FLASK_SECRET_NAME      = module.secrets.flask_secret_name
     JWT_SECRET_NAME        = module.secrets.jwt_secret_name
     CORS_ALLOWED_ORIGINS   = join(",", var.cors_origins)
+    ENABLE_COMPREHEND_MEDICAL = var.enable_comprehend_medical ? "true" : "false"
   }
 
   secrets = [
@@ -207,5 +210,76 @@ module "ecs" {
   env_name           = var.env_name
 
   depends_on = [module.iam, module.alb]
+}
+
+# VPC Endpoints (private connectivity to AWS services)
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.project_name}-${var.env_name}-vpc-endpoints-sg"
+  description = "Security group for VPC interface endpoints"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description     = "Allow HTTPS from ECS tasks"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [module.ecs.security_group_id]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-${var.env_name}-vpc-endpoints-sg"
+    Project     = var.project_name
+    Environment = var.env_name
+  }
+}
+
+# S3 Gateway Endpoint
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [module.vpc.private_route_table_id]
+
+  tags = {
+    Name        = "${var.project_name}-${var.env_name}-s3-endpoint"
+    Project     = var.project_name
+    Environment = var.env_name
+  }
+}
+
+locals {
+  interface_endpoints = concat(
+    [
+      "secretsmanager",
+      "cognito-idp",
+      "transcribe"
+    ],
+    var.comprehend_region == var.aws_region ? ["comprehendmedical"] : []
+  )
+}
+
+# Interface Endpoints for private AWS service access
+resource "aws_vpc_endpoint" "interface" {
+  for_each            = toset(local.interface_endpoints)
+  vpc_id              = module.vpc.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-${var.env_name}-${each.value}-endpoint"
+    Project     = var.project_name
+    Environment = var.env_name
+  }
 }
 

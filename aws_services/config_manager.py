@@ -19,9 +19,24 @@ class ConfigManager:
         self._secrets_cache: Dict[str, Any] = {}
         self._secrets_client = None
         
+        def _parse_int(value: Optional[str], default: int, minimum: int = 1, maximum: int = 60) -> int:
+            """Parse int from env with bounds."""
+            if value is None or value == "":
+                return default
+            try:
+                parsed = int(value)
+            except ValueError:
+                return default
+            if parsed < minimum:
+                return minimum
+            if parsed > maximum:
+                return maximum
+            return parsed
+
         # Load environment variables
         self.config = {
             'aws_region': self.region,
+            'aws_comprehend_region': os.getenv('AWS_COMPREHEND_REGION', self.region),
             'cognito_user_pool_id': os.getenv('AWS_COGNITO_USER_POOL_ID'),
             'cognito_client_id': os.getenv('AWS_COGNITO_CLIENT_ID'),
             'cognito_client_secret': os.getenv('AWS_COGNITO_CLIENT_SECRET'),
@@ -40,6 +55,14 @@ class ConfigManager:
             'jwt_secret': os.getenv('JWT_SECRET'),
             'cors_allowed_origins': os.getenv('CORS_ALLOWED_ORIGINS', '').split(','),
             'log_level': os.getenv('LOG_LEVEL', 'INFO'),
+            'enable_comprehend_medical': os.getenv('ENABLE_COMPREHEND_MEDICAL', 'true').lower() in ('1', 'true', 'yes'),
+            # Keep health checks under typical ALB idle timeout (60s)
+            'aws_connectivity_check_timeout': _parse_int(
+                os.getenv('AWS_CONNECTIVITY_CHECK_TIMEOUT'),
+                default=5,
+                minimum=1,
+                maximum=20
+            ),
         }
         
         logger.info("Configuration loaded from environment variables")

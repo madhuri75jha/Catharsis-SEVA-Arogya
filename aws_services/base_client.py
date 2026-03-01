@@ -1,5 +1,6 @@
 """Base AWS Client Manager"""
 import logging
+import os
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 from typing import Optional
@@ -27,12 +28,32 @@ class BaseAWSClient:
         
         try:
             logger.info(f"Initializing {service_name} client in region {region}")
-            self.client = boto3.client(service_name, region_name=region)
+            
+            # Get credentials from environment
+            import os
+            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+            
+            # Create client with explicit credentials if available
+            if aws_access_key and aws_secret_key:
+                logger.info(f"Using explicit AWS credentials for {service_name}")
+                self.client = boto3.client(
+                    service_name,
+                    region_name=region,
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key
+                )
+            else:
+                logger.info(f"Using default AWS credentials chain for {service_name}")
+                self.client = boto3.client(service_name, region_name=region)
+            
             logger.info(f"Successfully initialized {service_name} client")
             
         except (ClientError, BotoCoreError) as e:
             error_msg = f"Failed to initialize {service_name} client: {str(e)}"
             logger.error(error_msg)
+            logger.error(f"Region: {region}, Service: {service_name}")
+            logger.error("Possible causes: 1) Network/firewall blocking AWS, 2) Invalid credentials, 3) Proxy interference")
             raise Exception(error_msg) from e
         except Exception as e:
             error_msg = f"Unexpected error initializing {service_name} client: {str(e)}"

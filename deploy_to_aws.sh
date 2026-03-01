@@ -51,6 +51,20 @@ for cmd in terraform aws docker; do
   fi
 done
 
+echo ""
+echo "==> Running pre-deployment checks..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/scripts/pre_deploy_check.sh" ]; then
+  if ! bash "$SCRIPT_DIR/scripts/pre_deploy_check.sh"; then
+    echo ""
+    echo "Pre-deployment checks failed. Aborting deployment."
+    exit 1
+  fi
+else
+  echo "Warning: Pre-deployment check script not found"
+  echo "Proceeding without connectivity validation..."
+fi
+
 terraform_vars=(
   "-var=aws_region=${AWS_REGION}"
   "-var=project_name=${PROJECT_NAME:-seva-arogya}"
@@ -113,3 +127,19 @@ echo ""
 echo "Deployment complete."
 echo "API Base URL: $ALB_URL"
 echo "Health check: ${ALB_URL}/health"
+
+echo ""
+echo "==> Running deployment validation..."
+echo "Waiting 90 seconds for service to stabilize (NAT gateway, routes, ECS tasks)..."
+sleep 90
+
+# Run validation script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/scripts/validate_deployment.sh" ]; then
+  bash "$SCRIPT_DIR/scripts/validate_deployment.sh" "$ALB_URL"
+else
+  echo "Warning: Validation script not found at $SCRIPT_DIR/scripts/validate_deployment.sh"
+  echo "Skipping automated validation. Please manually verify:"
+  echo "  curl ${ALB_URL}/health"
+  echo "  curl ${ALB_URL}/health/aws-connectivity"
+fi

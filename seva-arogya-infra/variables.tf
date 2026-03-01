@@ -4,6 +4,12 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "comprehend_region" {
+  description = "AWS region for Comprehend Medical (if different from aws_region)"
+  type        = string
+  default     = "us-east-1"
+}
+
 variable "project_name" {
   description = "Project name used for resource naming and tagging"
   type        = string
@@ -106,6 +112,12 @@ variable "log_file_path" {
   description = "Path to application log file in the container"
   type        = string
   default     = "logs/app.log"
+}
+
+variable "enable_comprehend_medical" {
+  description = "Enable Comprehend Medical connectivity checks (only in supported regions)"
+  type        = bool
+  default     = false
 }
 
 variable "frontend_build_path" {
