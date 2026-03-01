@@ -11,7 +11,7 @@
   },
   "then": {
     "type": "askAgent",
-    "prompt": "A new markdown file was created. Please review if this information should instead be added to README.md or design.md to keep documentation consolidated. If the new file contains temporary or redundant information, consider consolidating it into the main documentation files and removing the new file."
+    "prompt": "A new markdown file was created. Please review if this information should instead be added to README.md or design.md to keep documentation consolidated. If the new file contains temporary or redundant information, consider consolidating it into the main documentation files and removing the new file. Design Readme.md to feel like a ppt. Make sure to include diagrams, maybe with mermaid."
   },
   "workspaceFolderName": "Catharsis-SEVA-Arogya",
   "shortName": "doc-consolidation-reminder"
