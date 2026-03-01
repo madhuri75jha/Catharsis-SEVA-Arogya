@@ -46,10 +46,16 @@ check_endpoint() {
 
   echo "Checking $name..."
 
+  # Determine if we need to skip SSL verification for HTTPS URLs
+  local curl_opts="-s -w \n%{http_code}"
+  if [[ "$url" == https://* ]]; then
+    curl_opts="$curl_opts -k"
+  fi
+
   for i in $(seq 1 $max_retries); do
     echo "  Attempt $i/$max_retries..."
 
-    response=$(curl -s -w "\n%{http_code}" "$url" 2>/dev/null || echo "000")
+    response=$(curl $curl_opts "$url" 2>/dev/null || echo "000")
     http_code=$(echo "$response" | tail -n1)
     body=$(echo "$response" | sed '$d')
 

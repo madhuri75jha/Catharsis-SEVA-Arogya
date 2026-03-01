@@ -1,0 +1,91 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Fault Condition** - Domain Routes to ALB
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: Scope the property to concrete failing case - ACM_ZONE_ID and ACM_DOMAIN_NAME both configured
+  - Test that when ACM_ZONE_ID and ACM_DOMAIN_NAME are both non-empty, Route53 A and AAAA alias records exist pointing to the ALB
+  - Deploy UNFIXED Terraform configuration with ACM_ZONE_ID and ACM_DOMAIN_NAME set
+  - Query Route53 to verify A record exists for the domain
+  - Query Route53 to verify AAAA record exists for the domain
+  - Verify records are alias records pointing to ALB DNS name and zone ID
+  - Verify DNS resolution works for the domain
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found (e.g., "Route53 shows only TXT validation record, no A or AAAA records", "DNS query returns NXDOMAIN", "terraform state list shows no aws_route53_record.alb_domain_a or aws_route53_record.alb_domain_aaaa")
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Manual DNS Configuration Support
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-buggy inputs (ACM_ZONE_ID empty or not provided)
+  - Deploy UNFIXED Terraform with ACM_ZONE_ID="" and observe that no Route53 records are created
+  - Deploy UNFIXED Terraform with ACM_DOMAIN_NAME="" and observe that no Route53 records are created
+  - Deploy UNFIXED Terraform with both variables empty and observe ALB is accessible via AWS DNS name
+  - Write property-based tests capturing observed behavior patterns:
+    - For any configuration where ACM_ZONE_ID is empty, no Route53 domain records are created
+    - For any configuration where ACM_DOMAIN_NAME is empty, no Route53 domain records are created
+    - For any configuration without custom domain variables, ALB deploys and is accessible via AWS DNS
+    - HTTP-only deployments (ENABLE_HTTPS=false) work identically
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.3, 3.4, 3.5_
+
+- [x] 3. Fix for missing Route53 A and AAAA alias records
+
+  - [x] 3.1 Add Route53 A record resource in main.tf
+    - Add aws_route53_record.alb_domain_a resource after existing aws_route53_record.alb_cert_validation (around line 38)
+    - Use conditional count: count = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+    - Set zone_id to var.acm_zone_id
+    - Set name to var.acm_domain_name
+    - Set type to "A"
+    - Configure alias block with name = module.alb.alb_dns_name, zone_id = module.alb.alb_zone_id, evaluate_target_health = true
+    - _Bug_Condition: isBugCondition(input) where input.acm_zone_id != "" AND input.acm_domain_name != "" AND NOT existsResource("aws_route53_record.alb_domain_a")_
+    - _Expected_Behavior: existsRoute53Record(config.acm_domain_name, "A", config.acm_zone_id) AND route53RecordPointsToALB(config.acm_domain_name, module.alb.alb_dns_name)_
+    - _Preservation: Configurations with empty ACM_ZONE_ID or ACM_DOMAIN_NAME must create no Route53 records_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.3, 3.4, 3.5_
+
+  - [x] 3.2 Add Route53 AAAA record resource in main.tf
+    - Add aws_route53_record.alb_domain_aaaa resource after the A record
+    - Use identical conditional count: count = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+    - Set zone_id to var.acm_zone_id
+    - Set name to var.acm_domain_name
+    - Set type to "AAAA"
+    - Configure alias block with name = module.alb.alb_dns_name, zone_id = module.alb.alb_zone_id, evaluate_target_health = true
+    - _Bug_Condition: isBugCondition(input) where input.acm_zone_id != "" AND input.acm_domain_name != "" AND NOT existsResource("aws_route53_record.alb_domain_aaaa")_
+    - _Expected_Behavior: existsRoute53Record(config.acm_domain_name, "AAAA", config.acm_zone_id) AND route53RecordPointsToALB(config.acm_domain_name, module.alb.alb_dns_name)_
+    - _Preservation: Configurations with empty ACM_ZONE_ID or ACM_DOMAIN_NAME must create no Route53 records_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.3, 3.4, 3.5_
+
+  - [x] 3.3 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Domain Routes to ALB
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - Deploy FIXED Terraform configuration with ACM_ZONE_ID and ACM_DOMAIN_NAME set
+    - Verify Route53 A record exists and points to ALB
+    - Verify Route53 AAAA record exists and points to ALB
+    - Verify DNS resolution works for the domain
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.4 Verify preservation tests still pass
+    - **Property 2: Preservation** - Manual DNS Configuration Support
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - Deploy FIXED Terraform with various non-buggy configurations (empty ACM_ZONE_ID, empty ACM_DOMAIN_NAME, both empty)
+    - Verify no Route53 domain records are created for these configurations
+    - Verify ALB remains accessible via AWS DNS name
+    - Verify HTTP-only deployments continue to work
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions)
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.

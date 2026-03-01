@@ -8,7 +8,7 @@ import asyncio
 import uuid
 import time
 from datetime import datetime
-from flask import session
+from flask import session, request
 from flask_socketio import emit, disconnect
 from utils.logger import get_logger
 from aws_services.session_manager import SessionManager
@@ -57,6 +57,20 @@ def init_socketio_handlers(socketio_instance, db_mgr, storage_mgr, config_mgr):
 
 def register_handlers(socketio):
     """Register all SocketIO event handlers"""
+
+    def normalize_session_id(raw_session_id):
+        """
+        Ensure session_id is a UUID string accepted by AWS Transcribe Medical.
+
+        Returns a canonical UUID string. If raw_session_id is invalid or missing,
+        generates a new UUID.
+        """
+        if raw_session_id:
+            try:
+                return str(uuid.UUID(str(raw_session_id)))
+            except (ValueError, TypeError, AttributeError):
+                logger.warning(f"Invalid session_id format received: {raw_session_id}. Generating UUID.")
+        return str(uuid.uuid4())
     
     @socketio.on('connect')
     def handle_connect():
@@ -84,16 +98,25 @@ def register_handlers(socketio):
         """Handle session start - initialize transcription"""
         try:
             user_id = session.get('user_id')
-            session_id = data.get('session_id') or str(uuid.uuid4())
-            quality = data.get('quality', 'medium')
+            payload = data if isinstance(data, dict) else {}
+            session_id = normalize_session_id(payload.get('session_id'))
+            quality = payload.get('quality', 'medium')
             
             logger.info(f"Session start: session_id={session_id}, user={user_id}, quality={quality}")
+            
+            # Get Socket.IO session ID with defensive check
+            request_sid = getattr(request, 'sid', None)
+            if request_sid is None:
+                logger.warning(f"request.sid not available for session {session_id}")
+                request_sid = session_id  # Fallback to session_id
+            else:
+                logger.debug(f"Retrieved request.sid: {request_sid} for session {session_id}")
             
             # Create session
             streaming_session = session_manager.create_session(
                 session_id=session_id,
                 user_id=user_id,
-                request_sid=request.sid,
+                request_sid=request_sid,
                 quality=quality
             )
             

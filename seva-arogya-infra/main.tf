@@ -40,6 +40,34 @@ resource "aws_acm_certificate_validation" "alb" {
   validation_record_fqdns = [aws_route53_record.alb_cert_validation[0].fqdn]
 }
 
+# Route53 A record to route domain traffic to ALB
+resource "aws_route53_record" "alb_domain_a" {
+  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+  zone_id = var.acm_zone_id
+  name    = var.acm_domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.alb.alb_dns_name
+    zone_id                = module.alb.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+# Route53 AAAA record to route domain traffic to ALB (IPv6)
+resource "aws_route53_record" "alb_domain_aaaa" {
+  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+  zone_id = var.acm_zone_id
+  name    = var.acm_domain_name
+  type    = "AAAA"
+
+  alias {
+    name                   = module.alb.alb_dns_name
+    zone_id                = module.alb.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
 # VPC Module
 module "vpc" {
   source = "./modules/vpc"
@@ -158,9 +186,9 @@ module "alb" {
 module "iam" {
   source = "./modules/iam"
 
-  project_name       = var.project_name
-  env_name           = var.env_name
-  s3_pdf_bucket_arn  = module.s3_pdf.bucket_arn
+  project_name        = var.project_name
+  env_name            = var.env_name
+  s3_pdf_bucket_arn   = module.s3_pdf.bucket_arn
   s3_audio_bucket_arn = module.s3_audio.bucket_arn
 }
 
@@ -185,22 +213,22 @@ module "ecs" {
   enable_execute_command = var.enable_execute_command
 
   environment_variables = {
-    FLASK_ENV              = var.env_name
-    LOG_LEVEL              = var.log_level
-    LOG_VIEW_TOKEN         = var.log_view_token
-    LOG_FILE_PATH          = var.log_file_path
-    AWS_REGION             = var.aws_region
-    AWS_TRANSCRIBE_REGION  = var.aws_region
-    AWS_COMPREHEND_REGION  = var.comprehend_region
-    EVENTLET_NO_GREENDNS   = "yes"
-    AWS_COGNITO_USER_POOL_ID = module.cognito.user_pool_id
-    AWS_COGNITO_CLIENT_ID    = module.cognito.app_client_id
-    S3_AUDIO_BUCKET        = module.s3_audio.bucket_id
-    S3_PDF_BUCKET          = module.s3_pdf.bucket_id
-    DB_SECRET_NAME         = module.secrets.db_secret_name
-    FLASK_SECRET_NAME      = module.secrets.flask_secret_name
-    JWT_SECRET_NAME        = module.secrets.jwt_secret_name
-    CORS_ALLOWED_ORIGINS   = join(",", var.cors_origins)
+    FLASK_ENV                 = var.env_name
+    LOG_LEVEL                 = var.log_level
+    LOG_VIEW_TOKEN            = var.log_view_token
+    LOG_FILE_PATH             = var.log_file_path
+    AWS_REGION                = var.aws_region
+    AWS_TRANSCRIBE_REGION     = var.aws_region
+    AWS_COMPREHEND_REGION     = var.comprehend_region
+    EVENTLET_NO_GREENDNS      = "yes"
+    AWS_COGNITO_USER_POOL_ID  = module.cognito.user_pool_id
+    AWS_COGNITO_CLIENT_ID     = module.cognito.app_client_id
+    S3_AUDIO_BUCKET           = module.s3_audio.bucket_id
+    S3_PDF_BUCKET             = module.s3_pdf.bucket_id
+    DB_SECRET_NAME            = module.secrets.db_secret_name
+    FLASK_SECRET_NAME         = module.secrets.flask_secret_name
+    JWT_SECRET_NAME           = module.secrets.jwt_secret_name
+    CORS_ALLOWED_ORIGINS      = join(",", var.cors_origins)
     ENABLE_COMPREHEND_MEDICAL = var.enable_comprehend_medical ? "true" : "false"
   }
 
