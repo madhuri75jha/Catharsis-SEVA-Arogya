@@ -28,6 +28,9 @@ terraform plan \
   -var="project_name=${PROJECT_NAME:-seva-arogya}" \
   -var="env_name=${ENV_NAME:-dev}" \
   -var="enable_https=${ENABLE_HTTPS:-false}" \
+  -var="certificate_arn=${CERTIFICATE_ARN:-}" \
+  -var="acm_domain_name=${ACM_DOMAIN_NAME:-}" \
+  -var="acm_zone_id=${ACM_ZONE_ID:-}" \
   -var="container_image=${CONTAINER_IMAGE:-nginx:latest}" \
   -var="db_name=${DB_NAME}" \
   -var="db_engine_version=${DB_ENGINE_VERSION:-}" \

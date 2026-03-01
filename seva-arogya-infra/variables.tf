@@ -40,6 +40,18 @@ variable "certificate_arn" {
   default     = ""
 }
 
+variable "acm_domain_name" {
+  description = "Domain name for ACM certificate (optional; used to request a new cert)"
+  type        = string
+  default     = ""
+}
+
+variable "acm_zone_id" {
+  description = "Route53 hosted zone ID for ACM DNS validation (optional)"
+  type        = string
+  default     = ""
+}
+
 variable "container_image" {
   description = "Docker image URI for ECS task (ECR repository URL with tag)"
   type        = string

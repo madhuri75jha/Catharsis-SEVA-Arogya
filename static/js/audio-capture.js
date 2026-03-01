@@ -26,8 +26,17 @@ class AudioCapture {
     async initialize() {
         try {
             // Check browser support
+            const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextCtor) {
+                throw new Error('Web Audio API (AudioContext) not supported in this browser');
+            }
+
+            if (!window.isSecureContext) {
+                throw new Error('Microphone access requires a secure context (HTTPS or localhost)');
+            }
+
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('Web Audio API not supported in this browser');
+                throw new Error('Microphone access is not available in this browser');
             }
 
             // Request microphone access
@@ -42,9 +51,23 @@ class AudioCapture {
             });
 
             // Create AudioContext with target sample rate
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            this.audioContext = new AudioContextCtor({
                 sampleRate: this.sampleRate
             });
+
+            // iOS/Safari can require a user gesture to resume AudioContext
+            if (this.audioContext.state === 'suspended') {
+                const resumeContext = async () => {
+                    try {
+                        await this.audioContext.resume();
+                    } catch (e) {
+                        console.warn('AudioContext resume failed:', e);
+                    }
+                };
+
+                document.addEventListener('click', resumeContext, { once: true });
+                document.addEventListener('touchend', resumeContext, { once: true });
+            }
 
             // Create source node from media stream
             this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);

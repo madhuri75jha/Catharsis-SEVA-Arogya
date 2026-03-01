@@ -8,6 +8,20 @@ output "api_base_url" {
   value       = var.enable_https ? "https://${module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
 }
 
+output "acm_certificate_arn" {
+  description = "ACM certificate ARN (if requested)"
+  value       = try(aws_acm_certificate.alb[0].arn, "")
+}
+
+output "acm_dns_validation_record" {
+  description = "DNS validation record for ACM (if requested without Route53 validation)"
+  value = try({
+    name  = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_value
+  }, {})
+}
+
 output "audio_bucket_name" {
   description = "S3 bucket name for audio storage"
   value       = module.s3_audio.bucket_id

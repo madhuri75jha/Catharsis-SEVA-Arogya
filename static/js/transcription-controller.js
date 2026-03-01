@@ -209,6 +209,20 @@ class TranscriptionController {
     }
 
     /**
+     * Convenience method - alias for startRecording()
+     */
+    async start() {
+        return this.startRecording();
+    }
+
+    /**
+     * Convenience method - alias for stopRecording()
+     */
+    async stop() {
+        return this.stopRecording();
+    }
+
+    /**
      * Cleanup resources
      */
     _cleanup() {

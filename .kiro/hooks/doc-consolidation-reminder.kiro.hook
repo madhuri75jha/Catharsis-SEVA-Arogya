@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Documentation Consolidation Reminder",
+  "description": "Reminds the agent to update README.md or design.md instead of creating new documentation files",
+  "version": "1",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "*.md"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new markdown file was created. Please review if this information should instead be added to README.md or design.md to keep documentation consolidated. If the new file contains temporary or redundant information, consider consolidating it into the main documentation files and removing the new file."
+  },
+  "workspaceFolderName": "Catharsis-SEVA-Arogya",
+  "shortName": "doc-consolidation-reminder"
+}

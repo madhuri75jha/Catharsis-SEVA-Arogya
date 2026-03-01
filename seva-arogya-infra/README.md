@@ -70,6 +70,13 @@ ENV_NAME=dev
 
 # Feature Toggles
 ENABLE_HTTPS=false
+# If ENABLE_HTTPS=true, provide a certificate ARN OR request one via ACM.
+# NOTE: ACM certificates require a domain you control.
+# Option A: Use an existing ACM cert:
+#   CERTIFICATE_ARN=arn:aws:acm:us-east-1:123456789012:certificate/...
+# Option B: Request a new ACM cert (DNS validation):
+#   ACM_DOMAIN_NAME=api.example.com
+#   ACM_ZONE_ID=Z123EXAMPLE
 
 # Container Image (update after pushing to ECR)
 CONTAINER_IMAGE=<account-id>.dkr.ecr.us-east-1.amazonaws.com/seva-arogya-dev-backend:latest
@@ -91,6 +98,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5000
 # Logging
 LOG_LEVEL=INFO
 ```
+
+**HTTPS note:** If you request a new ACM certificate via `ACM_DOMAIN_NAME` and `ACM_ZONE_ID`, run Terraform once with `ENABLE_HTTPS=false` to create/validate the cert. After the cert is issued, set `ENABLE_HTTPS=true` and apply again.
 
 ## Deployment Workflow
 

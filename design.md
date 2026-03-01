@@ -190,8 +190,99 @@ GitHub Actions workflow: Code quality → Testing (>70% coverage) → Build Dock
 
 ---
 
+---
+
+## 11. AWS Integration & Deployment
+
+### 11.1 AWS Services Configuration
+
+**Cognito Setup**:
+- User Pool with email verification
+- App Client with USER_PASSWORD_AUTH flow
+- JWT token validation (1-hour access, 30-day refresh)
+
+**S3 Buckets**:
+- Audio bucket: Server-side encryption (AES-256), lifecycle policies
+- PDF bucket: Private access, presigned URLs (1-hour expiry)
+
+**RDS Configuration**:
+- PostgreSQL 15, Multi-AZ deployment
+- Automated backups (7-day retention)
+- Connection pooling (2-10 connections)
+- Secrets Manager for credentials
+
+**IAM Permissions**:
+- ECS Task Role: Cognito, Transcribe, Comprehend, S3, Secrets Manager access
+- Execution Role: ECR, CloudWatch Logs access
+
+### 11.2 Deployment Process
+
+**Pre-Deployment Validation**:
+- DNS resolution for AWS endpoints
+- HTTP connectivity tests
+- AWS credentials validation
+- Boto3 client creation tests
+
+**Deployment Steps**:
+1. Terraform infrastructure deployment
+2. Docker image build and ECR push
+3. ECS service update with new task definition
+4. 90-second stabilization wait
+5. Post-deployment health validation
+
+**Post-Deployment Validation**:
+- Basic health check (`/health`)
+- AWS connectivity check (`/health/aws-connectivity`)
+- Validates: Cognito, S3, Transcribe, Comprehend, Secrets Manager
+
+**Rollback Procedure**:
+- Revert to previous ECS task definition
+- Database rollback via Alembic downgrade or snapshot restore
+- Terraform state rollback if infrastructure changed
+
+### 11.3 Monitoring & Operations
+
+**Health Endpoints**:
+- `/health` - Database, migrations, secrets manager status
+- `/health/aws-connectivity` - All AWS services connectivity with latency metrics
+
+**CloudWatch Metrics**:
+- Request count, latency (p50, p95, p99)
+- Error rates by endpoint
+- ECS CPU/memory utilization
+- Database connections and query performance
+
+**Alarms**:
+- CPU > 80% for 5 minutes
+- Error rate > 5% for 2 minutes
+- Health check failures
+- Database connection pool exhaustion
+
+**Log Retention**:
+- Application logs: 30 days
+- Audit logs: 7 years
+- Access logs: 90 days
+
+### 11.4 Troubleshooting
+
+**Common Issues**:
+
+1. **Connection Timeout**: Check NAT gateway status, security groups, VPC routes
+2. **Authentication Failures**: Verify Cognito configuration, JWT token expiry
+3. **Transcription Errors**: Check S3 permissions, audio format, file size limits
+4. **Database Connection**: Verify RDS security group, Secrets Manager credentials
+
+**Diagnostic Tools**:
+- `test_aws_connectivity.py` - Comprehensive connectivity test
+- `scripts/pre_deploy_check.sh` - Pre-deployment validation
+- `scripts/validate_deployment.sh` - Post-deployment validation
+- CloudWatch Logs Insights for query analysis
+
+---
+
 ## Document Navigation
 
-For requirements, user stories, acceptance criteria, and visual diagrams, refer to **requirements.md**.
+For requirements, user stories, acceptance criteria, and visual diagrams, refer to **requirements.md**.  
+For deployment procedures and AWS configuration, refer to **README.md**.
 
-**Version**: 2.0 | **Status**: Approved | **Next Review**: 2026-03-11
+**Version**: 2.0 | **Status**: Approved | **Last Updated**: 2026-03-01 | **Next Review**: 2026-04-01

@@ -295,11 +295,11 @@ LOG_LEVEL=DEBUG python app.py
 
 ## Next Steps
 
-1. **Test all endpoints** - Use the API reference in AWS_INTEGRATION_README.md
+1. **Test all endpoints** - Use the API reference in README.md
 2. **Upload sample audio** - Test transcription with medical audio files
 3. **Create prescriptions** - Test the full workflow
 4. **Monitor logs** - Check CloudWatch or local logs for errors
-5. **Deploy to production** - Follow AWS_DEPLOYMENT.md for ECS deployment
+5. **Deploy to production** - Follow README.md deployment section
 
 ## Development Tips
 
@@ -340,10 +340,10 @@ To test the application structure without AWS:
 
 ## Resources
 
-- **Full Documentation**: See AWS_INTEGRATION_README.md
-- **Deployment Guide**: See AWS_DEPLOYMENT.md
-- **API Reference**: See AWS_INTEGRATION_README.md#api-reference
-- **Troubleshooting**: See AWS_DEPLOYMENT.md#troubleshooting
+- **Full Documentation**: See README.md
+- **System Design**: See design.md
+- **API Reference**: See README.md (API Endpoints section)
+- **Troubleshooting**: See README.md (Troubleshooting section)
 
 ## Support
 

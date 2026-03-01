@@ -22,19 +22,27 @@
     
     <!-- Main Transcription Area (Top 2/3) -->
     <div class="flex-1 px-6 pt-8 overflow-y-auto">
-        <div id="transcriptionContent" class="space-y-6">
-            <!-- Text flow mimicking speech to text -->
-            <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                Ramesh... <span class="text-primary">45 years old</span>... 
-            </p>
-            <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                History of <span class="text-primary">fever for 3 days</span>... 
-            </p>
-            <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                Patient reports <span class="bg-primary/10 border-b-2 border-primary">sharp pain in lower abdomen</span>, localized to the right...
-            </p>
-            <!-- Real-time cursor effect -->
-            <div class="inline-block w-1 h-8 bg-primary animate-pulse ml-1 align-middle"></div>
+        <div id="transcription-display" class="space-y-6">
+            <!-- Hidden elements required by TranscriptionController -->
+            <button id="start-recording" style="display: none;"></button>
+            <button id="stop-recording" style="display: none;"></button>
+            <div id="status-indicator" style="display: none;"></div>
+            
+            <!-- Actual transcription content container -->
+            <div id="transcriptionContent" class="space-y-6">
+                <!-- Text flow mimicking speech to text -->
+                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
+                    Ramesh... <span class="text-primary">45 years old</span>... 
+                </p>
+                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
+                    History of <span class="text-primary">fever for 3 days</span>... 
+                </p>
+                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
+                    Patient reports <span class="bg-primary/10 border-b-2 border-primary">sharp pain in lower abdomen</span>, localized to the right...
+                </p>
+                <!-- Real-time cursor effect -->
+                <div class="inline-block w-1 h-8 bg-primary animate-pulse ml-1 align-middle"></div>
+            </div>
         </div>
     </div>
     
@@ -85,9 +93,15 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/audio-capture.js') }}"></script>
+<script src="{{ url_for('static', filename='js/websocket-client.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transcription-display.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transcription-controller.js') }}"></script>
 <script>
     let seconds = 0;
     let timerInterval;
+    let controller;
     
     // Start timer
     function startTimer() {
@@ -101,12 +115,96 @@
     }
     
     // Stop and review
-    function stopAndReview() {
-        clearInterval(timerInterval);
-        window.location.href = '/final-prescription';
+    async function stopAndReview() {
+        try {
+            // Stop the timer
+            clearInterval(timerInterval);
+            
+            // Stop the controller if it's recording
+            if (controller && controller.isRecording) {
+                console.log('Stopping transcription controller...');
+                await controller.stop();
+                console.log('Controller stopped, transcription data saved');
+            }
+            
+            // Navigate to final prescription page
+            window.location.href = '/final-prescription';
+        } catch (error) {
+            console.error('Error stopping transcription:', error);
+            // Navigate anyway to avoid blocking the user
+            window.location.href = '/final-prescription';
+        }
     }
     
-    // Start timer on page load
-    startTimer();
+    // Initialize TranscriptionController on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            // Get userId from Flask session
+            const userId = '{{ session.user_id }}';
+            
+            // Clear dummy content from transcription-display div
+            const transcriptionDisplay = document.getElementById('transcription-display');
+            if (transcriptionDisplay) {
+                // Keep only the hidden UI elements, remove dummy content
+                const startBtn = document.getElementById('start-recording');
+                const stopBtn = document.getElementById('stop-recording');
+                const statusInd = document.getElementById('status-indicator');
+                
+                transcriptionDisplay.innerHTML = '';
+                
+                // Re-add the hidden elements
+                if (startBtn) transcriptionDisplay.appendChild(startBtn);
+                if (stopBtn) transcriptionDisplay.appendChild(stopBtn);
+                if (statusInd) transcriptionDisplay.appendChild(statusInd);
+                
+                console.log('Cleared dummy content from transcription-display');
+            }
+            
+            // Create TranscriptionController with configuration
+            controller = new TranscriptionController({
+                websocketUrl: window.location.origin,
+                userId: userId,
+                quality: 'medium',
+                sampleRate: 16000,
+                chunkDurationMs: 250
+            });
+            
+            console.log('TranscriptionController created');
+            
+            // Initialize the controller
+            await controller.initialize();
+            console.log('TranscriptionController initialized');
+            
+            // Start transcription automatically
+            await controller.start();
+            console.log('Transcription started automatically');
+
+            // Start the timer when recording begins
+            startTimer();
+            
+        } catch (error) {
+            console.error('Failed to initialize or start transcription:', error);
+            // Stop timer if it was started
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+
+            // Display error message to user (avoid duplicate error blocks)
+            const transcriptionDisplay = document.getElementById('transcription-display');
+            const hasError = transcriptionDisplay?.querySelector?.('.error-message');
+
+            if (controller?.display?.showError && !hasError) {
+                controller.display.showError(`Failed to start transcription: ${error.message}`);
+            } else if (transcriptionDisplay && !hasError) {
+                transcriptionDisplay.insertAdjacentHTML('afterbegin', `
+                    <div class="text-red-600 dark:text-red-400 text-lg font-semibold">
+                        <p>Failed to start transcription</p>
+                        <p class="text-sm mt-2">${error.message}</p>
+                        <p class="text-sm mt-2">Please check microphone permissions and try again.</p>
+                    </div>
+                `);
+            }
+        }
+    });
 </script>
 {% endblock %}

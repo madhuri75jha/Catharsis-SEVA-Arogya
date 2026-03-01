@@ -10,6 +10,36 @@ provider "aws" {
 # Data Sources
 data "aws_caller_identity" "current" {}
 
+# ACM Certificate (optional; requires a domain you control)
+resource "aws_acm_certificate" "alb" {
+  count             = var.acm_domain_name != "" ? 1 : 0
+  domain_name       = var.acm_domain_name
+  validation_method = "DNS"
+
+  tags = {
+    Name        = "${var.project_name}-${var.env_name}-alb-cert"
+    Project     = var.project_name
+    Environment = var.env_name
+  }
+}
+
+# DNS validation (optional; only if a hosted zone is provided)
+resource "aws_route53_record" "alb_cert_validation" {
+  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+  zone_id = var.acm_zone_id
+
+  name    = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_name
+  type    = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_type
+  ttl     = 60
+  records = [tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_value]
+}
+
+resource "aws_acm_certificate_validation" "alb" {
+  count                   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+  certificate_arn         = aws_acm_certificate.alb[0].arn
+  validation_record_fqdns = [aws_route53_record.alb_cert_validation[0].fqdn]
+}
+
 # VPC Module
 module "vpc" {
   source = "./modules/vpc"
@@ -117,7 +147,7 @@ module "alb" {
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
   enable_https      = var.enable_https
-  certificate_arn   = var.certificate_arn
+  certificate_arn   = var.certificate_arn != "" ? var.certificate_arn : try(aws_acm_certificate.alb[0].arn, "")
   health_check_path = "/health"
   target_port       = local.container_port
   project_name      = var.project_name
