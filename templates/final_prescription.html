@@ -50,19 +50,19 @@
                 <div class="grid grid-cols-2 gap-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg">
                     <div class="flex flex-col">
                         <span class="text-slate-400 text-[10px] uppercase font-bold">Name</span>
-                        <span class="text-slate-900 dark:text-slate-100 text-sm font-medium">John Doe</span>
+                        <span id="patientName" class="text-slate-900 dark:text-slate-100 text-sm font-medium">John Doe</span>
                     </div>
                     <div class="flex flex-col">
                         <span class="text-slate-400 text-[10px] uppercase font-bold">Age / Sex</span>
-                        <span class="text-slate-900 dark:text-slate-100 text-sm font-medium">45 / Male</span>
+                        <span id="patientAgeSex" class="text-slate-900 dark:text-slate-100 text-sm font-medium">45 / Male</span>
                     </div>
                     <div class="flex flex-col">
                         <span class="text-slate-400 text-[10px] uppercase font-bold">Weight</span>
-                        <span class="text-slate-900 dark:text-slate-100 text-sm font-medium">78 kg</span>
+                        <span id="patientWeight" class="text-slate-900 dark:text-slate-100 text-sm font-medium">78 kg</span>
                     </div>
                     <div class="flex flex-col">
                         <span class="text-slate-400 text-[10px] uppercase font-bold">Patient ID</span>
-                        <span class="text-slate-900 dark:text-slate-100 text-sm font-medium">#CGH-9921</span>
+                        <span id="patientId" class="text-slate-900 dark:text-slate-100 text-sm font-medium">#CGH-9921</span>
                     </div>
                 </div>
             </div>
@@ -78,19 +78,19 @@
                 <div class="flex justify-between gap-2">
                     <div class="flex-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                         <span class="text-[10px] text-slate-400 block font-bold">BP</span>
-                        <span class="text-sm font-bold text-slate-900 dark:text-slate-100">120/80</span>
+                        <span id="vitalBp" class="text-sm font-bold text-slate-900 dark:text-slate-100">120/80</span>
                     </div>
                     <div class="flex-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                         <span class="text-[10px] text-slate-400 block font-bold">HR</span>
-                        <span class="text-sm font-bold text-slate-900 dark:text-slate-100">72 bpm</span>
+                        <span id="vitalHr" class="text-sm font-bold text-slate-900 dark:text-slate-100">72 bpm</span>
                     </div>
                     <div class="flex-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                         <span class="text-[10px] text-slate-400 block font-bold">TEMP</span>
-                        <span class="text-sm font-bold text-slate-900 dark:text-slate-100">98.6°F</span>
+                        <span id="vitalTemp" class="text-sm font-bold text-slate-900 dark:text-slate-100">98.6°F</span>
                     </div>
                     <div class="flex-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                         <span class="text-[10px] text-slate-400 block font-bold">SPO2</span>
-                        <span class="text-sm font-bold text-slate-900 dark:text-slate-100">98%</span>
+                        <span id="vitalSpo2" class="text-sm font-bold text-slate-900 dark:text-slate-100">98%</span>
                     </div>
                 </div>
             </div>
@@ -104,7 +104,7 @@
                     </button>
                 </div>
                 <div class="border-l-4 border-primary bg-primary/5 p-3 rounded-r-lg">
-                    <p class="text-slate-800 dark:text-slate-200 text-sm font-medium italic">Acute Bacterial Sinusitis</p>
+                    <p id="diagnosisText" class="text-slate-800 dark:text-slate-200 text-sm font-medium italic">Acute Bacterial Sinusitis</p>
                 </div>
             </div>
             
@@ -128,7 +128,7 @@
                                 <th class="p-3 text-right">Dur</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                        <tbody id="medicationsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
                             <tr>
                                 <td class="p-3">
                                     <div class="font-bold text-slate-900 dark:text-white text-sm">Amoxicillin</div>
@@ -174,7 +174,7 @@
                 <span class="material-symbols-outlined text-primary text-lg">info</span>
                 <h4 class="text-primary text-sm font-bold">Clinical Notes</h4>
             </div>
-            <p class="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
+            <p id="clinicalNotesText" class="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
                 Patient to return if fever persists beyond 48 hours. Drink plenty of warm fluids. Avoid cold beverages and direct exposure to dust.
             </p>
         </div>
@@ -211,5 +211,130 @@
         alert('Prescription finalized! Ready to print.');
         // TODO: Implement actual PDF generation and print functionality
     }
+
+    function buildSectionMaps(prescriptionData) {
+        const sectionMap = {};
+        const medicationRows = [];
+
+        if (!prescriptionData || !Array.isArray(prescriptionData.sections)) {
+            return { sectionMap, medicationRows };
+        }
+
+        for (const section of prescriptionData.sections) {
+            if (!section || !section.section_id || !Array.isArray(section.fields)) {
+                continue;
+            }
+
+            const baseSectionId = section.section_id.replace(/_\d+$/, '');
+            const fields = {};
+
+            for (const field of section.fields) {
+                if (field && field.field_name) {
+                    fields[field.field_name] = field.value || '';
+                }
+            }
+
+            if (baseSectionId === 'medications') {
+                medicationRows.push(fields);
+            } else {
+                sectionMap[baseSectionId] = fields;
+            }
+        }
+
+        return { sectionMap, medicationRows };
+    }
+
+    function fillText(id, value) {
+        if (!value) return;
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = value;
+        }
+    }
+
+    function renderMedicationRows(rows) {
+        if (!rows || rows.length === 0) {
+            return;
+        }
+
+        const tbody = document.getElementById('medicationsTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+        rows.forEach((med) => {
+            const tr = document.createElement('tr');
+
+            const medCell = document.createElement('td');
+            medCell.className = 'p-3';
+            const medName = document.createElement('div');
+            medName.className = 'font-bold text-slate-900 dark:text-white text-sm';
+            medName.textContent = med.medicine_name || '-';
+            const medType = document.createElement('div');
+            medType.className = 'text-[10px] text-slate-400';
+            medType.textContent = med.medicine_type || '';
+            medCell.appendChild(medName);
+            medCell.appendChild(medType);
+
+            const doseCell = document.createElement('td');
+            doseCell.className = 'p-3 text-slate-700 dark:text-slate-300 text-sm';
+            doseCell.textContent = med.dose || '-';
+
+            const freqCell = document.createElement('td');
+            freqCell.className = 'p-3 text-center';
+            const freqBadge = document.createElement('span');
+            freqBadge.className = 'bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded';
+            freqBadge.textContent = med.frequency || '-';
+            freqCell.appendChild(freqBadge);
+
+            const durCell = document.createElement('td');
+            durCell.className = 'p-3 text-right text-slate-700 dark:text-slate-300 text-sm font-medium';
+            durCell.textContent = med.duration || '-';
+
+            tr.appendChild(medCell);
+            tr.appendChild(doseCell);
+            tr.appendChild(freqCell);
+            tr.appendChild(durCell);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function populateFromBedrockResponse() {
+        const raw = sessionStorage.getItem('prescriptionData');
+        if (!raw) return;
+
+        let prescriptionData;
+        try {
+            prescriptionData = JSON.parse(raw);
+        } catch (error) {
+            console.warn('Invalid prescriptionData in sessionStorage:', error);
+            return;
+        }
+
+        const { sectionMap, medicationRows } = buildSectionMaps(prescriptionData);
+        const patient = sectionMap.patient_details || {};
+        const vitals = sectionMap.vitals || {};
+        const diagnosis = sectionMap.diagnosis || {};
+        const notes = sectionMap.clinical_notes || {};
+
+        fillText('patientName', patient.patient_name);
+        fillText('patientWeight', patient.patient_weight);
+        fillText('patientId', patient.patient_id);
+
+        if (patient.patient_age || patient.patient_sex) {
+            const ageSex = [patient.patient_age, patient.patient_sex].filter(Boolean).join(' / ');
+            fillText('patientAgeSex', ageSex);
+        }
+
+        fillText('vitalBp', vitals.blood_pressure);
+        fillText('vitalHr', vitals.heart_rate);
+        fillText('vitalTemp', vitals.temperature);
+        fillText('vitalSpo2', vitals.oxygen_saturation);
+        fillText('diagnosisText', diagnosis.diagnosis);
+        fillText('clinicalNotesText', notes.clinical_notes);
+
+        renderMedicationRows(medicationRows);
+    }
+
+    document.addEventListener('DOMContentLoaded', populateFromBedrockResponse);
 </script>
 {% endblock %}

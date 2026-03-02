@@ -285,6 +285,28 @@ class TranscribeStreamingManager:
             raise RuntimeError(f"No active stream for session: {session_id}")
         
         try:
+            sender_task = stream_info.get('sender_task')
+            if sender_task and sender_task.done():
+                task_error = None
+                try:
+                    task_error = sender_task.exception()
+                except Exception:
+                    task_error = None
+                raise RuntimeError(
+                    f"Audio sender task stopped for session {session_id}: {task_error}"
+                )
+
+            results_task = stream_info.get('results_task')
+            if results_task and results_task.done():
+                task_error = None
+                try:
+                    task_error = results_task.exception()
+                except Exception:
+                    task_error = None
+                raise RuntimeError(
+                    f"Result handler task stopped for session {session_id}: {task_error}"
+                )
+
             session_loop = stream_info['loop']
             audio_queue = stream_info['audio_queue']
             session_loop.call_soon_threadsafe(audio_queue.put_nowait, chunk)

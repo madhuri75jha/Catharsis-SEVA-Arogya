@@ -35,25 +35,18 @@
     <div class="px-6 py-6 border-t border-slate-100 dark:border-slate-800">
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Recent Consultations</h3>
-            <button class="text-xs font-bold text-primary">View All</button>
+            <button id="view-all-btn" class="text-xs font-bold text-primary hidden">View All</button>
         </div>
         
-        <div class="flex gap-4 overflow-x-auto no-scrollbar">
-            <div class="flex-shrink-0 flex items-center gap-3 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div class="size-8 rounded-full bg-blue-100 flex items-center justify-center text-primary text-xs font-bold">AK</div>
-                <div>
-                    <p class="text-xs font-bold text-slate-800 dark:text-slate-200">Arjun Kumar</p>
-                    <p class="text-[10px] text-slate-500">2 hours ago</p>
-                </div>
-            </div>
-            
-            <div class="flex-shrink-0 flex items-center gap-3 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div class="size-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xs font-bold">SL</div>
-                <div>
-                    <p class="text-xs font-bold text-slate-800 dark:text-slate-200">Sarah Lee</p>
-                    <p class="text-[10px] text-slate-500">Yesterday</p>
-                </div>
-            </div>
+        <!-- Consultations container - dynamically populated by JavaScript -->
+        <div id="consultations-container" class="flex gap-4 overflow-x-auto no-scrollbar">
+            <!-- Loading state -->
+            <p class="text-xs text-slate-500">Loading consultations...</p>
+        </div>
+        
+        <!-- Empty state message - hidden by default -->
+        <div id="empty-state" class="hidden text-center py-4">
+            <p class="text-xs text-slate-500">No recent consultations found</p>
         </div>
     </div>
     
@@ -64,6 +57,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/home_debug.js') }}"></script>
 <script>
     function startConsultation() {
         window.location.href = '/transcription';

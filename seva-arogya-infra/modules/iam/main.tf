@@ -171,7 +171,9 @@ resource "aws_iam_role_policy" "ecs_task_medical_ai" {
           "transcribe:StartMedicalStreamTranscription",
           "comprehendmedical:DetectEntitiesV2",
           "comprehendmedical:InferICD10CM",
-          "translate:TranslateText"
+          "translate:TranslateText",
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = "*"
       }

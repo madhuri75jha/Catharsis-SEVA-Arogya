@@ -22,6 +22,12 @@ variable "bedrock_model_id" {
   default     = "anthropic.claude-3-haiku-20240307-v1:0"
 }
 
+variable "stream_idle_timeout_seconds" {
+  description = "Idle timeout for live transcription sessions before cleanup"
+  type        = number
+  default     = 900
+}
+
 variable "project_name" {
   description = "Project name used for resource naming and tagging"
   type        = string

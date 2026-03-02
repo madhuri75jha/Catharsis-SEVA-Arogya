@@ -39,7 +39,8 @@ def init_socketio_handlers(socketio_instance, db_mgr, storage_mgr, config_mgr):
     storage_manager = storage_mgr
     
     # Initialize session manager
-    session_manager = SessionManager(max_sessions=100, idle_timeout=300)
+    idle_timeout = config_mgr.get('stream_idle_timeout_seconds', 900)
+    session_manager = SessionManager(max_sessions=100, idle_timeout=idle_timeout)
     
     # Initialize transcribe streaming manager
     region = config_mgr.get('aws_transcribe_region') or config_mgr.get('aws_region')
@@ -112,6 +113,29 @@ def register_handlers(socketio):
                 request_sid = session_id  # Fallback to session_id
             else:
                 logger.debug(f"Retrieved request.sid: {request_sid} for session {session_id}")
+
+            # Defensive cleanup: if this socket reconnects/restarts without a clean
+            # session_end, clear stale sessions bound to the same request_sid so
+            # the next start can still get an acknowledgment promptly.
+            stale_session_ids = []
+            for existing_id, existing_session in session_manager.get_all_sessions().items():
+                if existing_session.request_sid == request_sid and existing_id != session_id:
+                    stale_session_ids.append(existing_id)
+
+            for stale_session_id in stale_session_ids:
+                try:
+                    transcribe_streaming_manager.end_stream(stale_session_id)
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Failed ending stale stream for request_sid={request_sid}, "
+                        f"session_id={stale_session_id}: {cleanup_error}"
+                    )
+                finally:
+                    session_manager.remove_session(stale_session_id)
+                    logger.info(
+                        f"Cleaned stale session before new start: "
+                        f"request_sid={request_sid}, session_id={stale_session_id}"
+                    )
             
             # Create session
             streaming_session = session_manager.create_session(
@@ -166,6 +190,7 @@ def register_handlers(socketio):
             stream_started = True
             
             streaming_session.transcribe_stream = stream_info
+            streaming_session.result_callback = result_callback
             
             # Create transcription record in database
             from models.transcription import Transcription
@@ -344,14 +369,41 @@ def register_handlers(socketio):
                     transcribe_streaming_manager.send_audio_chunk(session_id, audio_bytes)
                 except RuntimeError as stream_error:
                     logger.warning(f"Audio stream unavailable: session={session_id}, error={stream_error}")
-                    emit('error', {
-                        'type': 'error',
-                        'error_code': 'STREAM_NOT_READY',
-                        'message': 'Transcription stream is not ready',
-                        'recoverable': True,
-                        'timestamp': time.time()
-                    })
-                    return
+
+                    # Attempt one in-place stream recovery for transient worker failures.
+                    try:
+                        transcribe_streaming_manager.end_stream(session_id)
+                    except Exception as end_error:
+                        logger.warning(f"Failed ending broken stream: session={session_id}, error={end_error}")
+
+                    try:
+                        result_callback = getattr(streaming_session, 'result_callback', None)
+                        if result_callback is None:
+                            raise RuntimeError("Missing result callback for stream recovery")
+
+                        stream_info = transcribe_streaming_manager.start_stream(
+                            session_id=session_id,
+                            sample_rate=streaming_session.sample_rate,
+                            result_callback=result_callback,
+                            language_code='en-US',
+                            specialty='PRIMARYCARE'
+                        )
+                        streaming_session.transcribe_stream = stream_info
+                        transcribe_streaming_manager.send_audio_chunk(session_id, audio_bytes)
+                        logger.info(f"Recovered transcription stream: session={session_id}")
+                    except Exception as restart_error:
+                        logger.error(
+                            f"Failed to recover transcription stream: session={session_id}, "
+                            f"error={restart_error}"
+                        )
+                        emit('error', {
+                            'type': 'error',
+                            'error_code': 'STREAM_NOT_READY',
+                            'message': 'Transcription stream is not ready',
+                            'recoverable': False,
+                            'timestamp': time.time()
+                        })
+                        return
                 
                 # Update activity
                 session_manager.update_activity(session_id)
@@ -370,8 +422,10 @@ def register_handlers(socketio):
     @socketio.on('session_end')
     def handle_session_end(data):
         """Handle session end - finalize transcription"""
+        session_id = None
         try:
-            session_id = data.get('session_id')
+            payload = data if isinstance(data, dict) else {}
+            session_id = payload.get('session_id')
             
             if not session_id:
                 logger.warning("Missing session_id in session_end")
@@ -379,8 +433,9 @@ def register_handlers(socketio):
             
             logger.info(f"Session end: {session_id}")
             
-            # Get session
-            streaming_session = session_manager.get_session(session_id)
+            # Remove session first so failures below do not leave stale session
+            # state that can block/impact future starts from the same device.
+            streaming_session = session_manager.remove_session(session_id)
             if not streaming_session:
                 logger.warning(f"Session not found: {session_id}")
                 return
@@ -423,9 +478,6 @@ def register_handlers(socketio):
                 (s3_key, audio_buffer.get_total_duration(), session_id)
             )
             
-            # Remove session
-            session_manager.remove_session(session_id)
-            
             # Send completion message
             emit('session_complete', {
                 'type': 'session_complete',
@@ -439,6 +491,9 @@ def register_handlers(socketio):
             
         except Exception as e:
             logger.error(f"Session end error: {str(e)}")
+            if session_id:
+                # Ensure no stale session survives session_end failures.
+                session_manager.remove_session(session_id)
             emit('error', {
                 'type': 'error',
                 'error_code': 'SESSION_END_FAILED',

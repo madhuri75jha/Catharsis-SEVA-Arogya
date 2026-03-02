@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Consultation Details - SEVA Arogya{% endblock %}
+
+{% block content %}
+<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+    <!-- Header Section -->
+    <div class="px-6 pt-8 pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center mb-4">
+            <button onclick="window.location.href='/home'" class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <span class="material-symbols-outlined text-slate-600 dark:text-slate-400">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold text-slate-800 dark:text-white ml-3">Consultation Details</h1>
+        </div>
+        
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-slate-900 dark:text-white">
+                    {{ consultation.patient_name }}
+                </h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    {{ consultation.created_at.strftime('%b %d, %Y at %I:%M %p') if consultation.created_at else 'Date unavailable' }}
+                </p>
+            </div>
+            
+            <!-- Status Badge -->
+            <div class="flex items-center">
+                {% if consultation.status == 'COMPLETED' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                    Complete
+                </span>
+                {% elif consultation.status == 'IN_PROGRESS' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                    <span class="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
+                    In Progress
+                </span>
+                {% elif consultation.status == 'FAILED' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+                    Failed
+                </span>
+                {% else %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400">
+                    <span class="w-2 h-2 bg-slate-500 rounded-full mr-2"></span>
+                    {{ consultation.status }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Scrollable Content -->
+    <div class="flex-1 overflow-y-auto px-6 py-6">
+        <!-- Transcript Section -->
+        <div class="mb-6">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Transcript</h3>
+            <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                {% if consultation.transcript_text and consultation.transcript_text != "No transcript available" %}
+                <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{{ consultation.transcript_text }}</p>
+                {% else %}
+                <p class="text-sm text-slate-500 dark:text-slate-400 italic">No transcript available</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Medical Entities Section -->
+        {% if consultation.medical_entities and consultation.medical_entities|length > 0 %}
+        <div class="mb-6">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Medical Entities</h3>
+            
+            {% set entities_by_category = {} %}
+            {% for entity in consultation.medical_entities %}
+                {% set category = entity.Category %}
+                {% if category not in entities_by_category %}
+                    {% set _ = entities_by_category.update({category: []}) %}
+                {% endif %}
+                {% set _ = entities_by_category[category].append(entity) %}
+            {% endfor %}
+            
+            <div class="space-y-4">
+                {% for category, entities in entities_by_category.items() %}
+                <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                    <h4 class="text-xs font-semibold text-primary uppercase tracking-wide mb-2">
+                        {{ category.replace('_', ' ') }}
+                    </h4>
+                    <div class="flex flex-wrap gap-2">
+                        {% for entity in entities %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {{ entity.Text }}
+                            {% if entity.Type %}
+                            <span class="ml-1 text-slate-400 dark:text-slate-500">• {{ entity.Type }}</span>
+                            {% endif %}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Prescription Section -->
+        {% if consultation.prescription %}
+        <div class="mb-6">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Prescription</h3>
+            <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                {% if consultation.prescription.medications and consultation.prescription.medications|length > 0 %}
+                <div class="space-y-3">
+                    {% for medication in consultation.prescription.medications %}
+                    <div class="flex items-start">
+                        <span class="material-symbols-outlined text-primary text-[20px] mr-3 mt-0.5">medication</span>
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-slate-800 dark:text-white">
+                                {{ medication.name if medication.name else 'Medication' }}
+                            </p>
+                            {% if medication.dosage %}
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                Dosage: {{ medication.dosage }}
+                            </p>
+                            {% endif %}
+                            {% if medication.frequency %}
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                Frequency: {{ medication.frequency }}
+                            </p>
+                            {% endif %}
+                            {% if medication.duration %}
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                Duration: {{ medication.duration }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if not loop.last %}
+                    <div class="border-t border-slate-200 dark:border-slate-800"></div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-500 dark:text-slate-400 italic">No medications listed</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Bottom Navigation -->
+    <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+        <button onclick="window.location.href='/home'" class="w-full bg-primary text-white font-semibold py-3 px-4 rounded-xl hover:bg-primary/90 active:scale-98 transition-all flex items-center justify-center">
+            <span class="material-symbols-outlined mr-2">arrow_back</span>
+            Back to Home
+        </button>
+    </div>
+    
+    <div class="pb-4 flex justify-center">
+        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+</style>
+{% endblock %}

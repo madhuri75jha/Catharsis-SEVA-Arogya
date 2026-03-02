@@ -232,6 +232,7 @@ module "ecs" {
     JWT_SECRET_NAME           = module.secrets.jwt_secret_name
     CORS_ALLOWED_ORIGINS      = join(",", var.cors_origins)
     ENABLE_COMPREHEND_MEDICAL = var.enable_comprehend_medical ? "true" : "false"
+    STREAM_IDLE_TIMEOUT_SECONDS = tostring(var.stream_idle_timeout_seconds)
   }
 
   secrets = [

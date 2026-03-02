@@ -2,6 +2,7 @@
 import logging
 import json
 import time
+from enum import Enum
 from typing import List, Dict, Any, Optional
 from botocore.exceptions import ClientError
 from .base_client import BaseAWSClient
@@ -145,7 +146,7 @@ class BedrockClient(BaseAWSClient):
     def _construct_prompt(
         self,
         transcript: str,
-        entities: List[MedicalEntity]
+        entities: List[Any]
     ) -> str:
         """
         Build prompt with transcript and entity context for Bedrock
@@ -157,13 +158,33 @@ class BedrockClient(BaseAWSClient):
         Returns:
             Formatted prompt string
         """
-        # Group entities by type for better context
+        # Group entities by type for better context.
+        # Accept entities in multiple shapes (Pydantic model, dict, or plain object)
+        # so extraction does not fail on type coercion differences.
         entities_by_type = {}
         for entity in entities:
-            entity_type = entity.entity_type.value
+            entity_type = "UNKNOWN"
+            text = ""
+
+            if isinstance(entity, dict):
+                raw_type = entity.get("entity_type") or entity.get("type")
+                text = entity.get("text", "")
+            else:
+                raw_type = getattr(entity, "entity_type", None) or getattr(entity, "type", None)
+                text = getattr(entity, "text", "")
+
+            if isinstance(raw_type, Enum):
+                entity_type = raw_type.value
+            elif isinstance(raw_type, str) and raw_type.strip():
+                entity_type = raw_type.strip().upper()
+
+            text = str(text or "").strip()
+            if not text:
+                continue
+
             if entity_type not in entities_by_type:
                 entities_by_type[entity_type] = []
-            entities_by_type[entity_type].append(entity.text)
+            entities_by_type[entity_type].append(text)
         
         # Build entity context section
         entity_context = []
@@ -247,7 +268,7 @@ Please extract the prescription information from this transcript and fill in the
     def generate_prescription_data(
         self,
         transcript: str,
-        entities: List[MedicalEntity],
+        entities: List[Any],
         hospital_config: HospitalConfiguration
     ) -> Optional[FunctionCallResponse]:
         """

@@ -107,7 +107,7 @@ class AudioCapture {
     /**
      * Start audio capture
      */
-    start() {
+    async start() {
         if (!this.audioContext || !this.sourceNode || !this.processorNode) {
             throw new Error('Audio capture not initialized. Call initialize() first.');
         }
@@ -115,6 +115,21 @@ class AudioCapture {
         if (this.isCapturing) {
             console.warn('Audio capture already started');
             return;
+        }
+
+        // Ensure AudioContext is running before connecting processing graph.
+        // In some browsers, autostart flows can leave context suspended.
+        if (this.audioContext.state === 'suspended') {
+            try {
+                await this.audioContext.resume();
+            } catch (resumeError) {
+                console.error('AudioContext resume failed on start:', resumeError);
+                throw new Error('Microphone is blocked. Tap/click the page and try again.');
+            }
+        }
+
+        if (this.audioContext.state !== 'running') {
+            throw new Error('Microphone audio engine did not start. Tap/click the page and try again.');
         }
 
         // Connect audio nodes

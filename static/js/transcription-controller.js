@@ -160,7 +160,7 @@ class TranscriptionController {
             await this._startSessionAndWaitForAck();
 
             // Start audio capture
-            this.audioCapture.start();
+            await this.audioCapture.start();
 
             this.isRecording = true;
             this._updateUI('recording');

@@ -3,8 +3,13 @@ Pytest configuration and fixtures for SEVA Arogya tests
 """
 import pytest
 import os
+import sys
 from hypothesis import settings, Verbosity
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
+
+# Mock pydub and audio modules before any imports to avoid Python 3.13 compatibility issues
+sys.modules['pydub'] = MagicMock()
+sys.modules['pydub.AudioSegment'] = MagicMock()
 
 # Configure Hypothesis for property-based testing
 settings.register_profile("dev", max_examples=100, verbosity=Verbosity.normal)

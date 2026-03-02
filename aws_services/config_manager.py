@@ -66,6 +66,12 @@ class ConfigManager:
                 minimum=1,
                 maximum=20
             ),
+            'stream_idle_timeout_seconds': _parse_int(
+                os.getenv('STREAM_IDLE_TIMEOUT_SECONDS'),
+                default=900,
+                minimum=60,
+                maximum=7200
+            ),
         }
         
         logger.info("Configuration loaded from environment variables")

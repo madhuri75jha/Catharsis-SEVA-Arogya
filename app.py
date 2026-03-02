@@ -7,11 +7,12 @@ Voice-enabled clinical note capture and prescription generation system
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, abort
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from functools import wraps
 import os
+import json
 import logging
 from collections import deque
 from dotenv import load_dotenv
@@ -298,6 +299,249 @@ def final_prescription():
 def bedrock_prescription():
     """AI-assisted prescription page with Bedrock extraction"""
     return render_template('bedrock_prescription.html')
+
+
+@app.route('/consultation/<int:consultation_id>')
+@login_required
+def consultation_detail(consultation_id):
+    """
+    Consultation detail view
+    
+    Display complete consultation information including transcript, 
+    medical entities, and prescription data.
+    
+    Args:
+        consultation_id: The transcription_id of the consultation
+        
+    Returns:
+        Rendered consultation_detail.html template or 404 error
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Get user_id from session
+        user_id = session.get('user_id')
+        
+        if not user_id:
+            logger.warning("Consultation detail request without user_id in session")
+            return redirect(url_for('login'))
+        
+        # Check if we should use mock data (for local development)
+        use_mock_data = os.getenv('USE_MOCK_CONSULTATIONS', 'false').lower() == 'true'
+        
+        if use_mock_data:
+            logger.info(f"Using mock consultation detail data for consultation {consultation_id}")
+            from datetime import datetime, timedelta
+            
+            # Mock consultation data
+            mock_consultations = {
+                1: {
+                    'consultation_id': 1,
+                    'patient_name': 'Arjun Kumar',
+                    'status': 'COMPLETED',
+                    'transcript_text': 'Patient complains of headache and fever for the past 3 days. Temperature recorded at 101°F. Patient reports body aches and fatigue. No history of recent travel. Prescribed paracetamol for fever and advised rest.',
+                    'medical_entities': [
+                        {"Text": "Arjun Kumar", "Category": "PROTECTED_HEALTH_INFORMATION", "Type": "NAME", "Score": 0.99},
+                        {"Text": "headache", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.95},
+                        {"Text": "fever", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.97},
+                        {"Text": "paracetamol", "Category": "MEDICATION", "Type": "GENERIC_NAME", "Score": 0.98}
+                    ],
+                    'created_at': datetime.now() - timedelta(hours=2),
+                    'updated_at': datetime.now() - timedelta(hours=2),
+                    'prescription': {
+                        'prescription_id': 101,
+                        'patient_name': 'Arjun Kumar',
+                        'medications': [
+                            {"name": "Paracetamol", "dosage": "500mg", "frequency": "Twice daily", "duration": "5 days"}
+                        ],
+                        'created_at': datetime.now() - timedelta(hours=2)
+                    }
+                },
+                2: {
+                    'consultation_id': 2,
+                    'patient_name': 'Priya Sharma',
+                    'status': 'COMPLETED',
+                    'transcript_text': 'Follow-up visit for diabetes management. Blood sugar levels have improved. Patient reports better adherence to diet plan. Continue current medication regimen.',
+                    'medical_entities': [
+                        {"Text": "Priya Sharma", "Category": "PROTECTED_HEALTH_INFORMATION", "Type": "NAME", "Score": 0.99},
+                        {"Text": "diabetes", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.98}
+                    ],
+                    'created_at': datetime.now() - timedelta(days=1),
+                    'updated_at': datetime.now() - timedelta(days=1),
+                    'prescription': None
+                },
+                3: {
+                    'consultation_id': 3,
+                    'patient_name': 'Rajesh Patel',
+                    'status': 'IN_PROGRESS',
+                    'transcript_text': 'Patient reports chest pain and shortness of breath. ECG ordered. Awaiting test results.',
+                    'medical_entities': [
+                        {"Text": "Rajesh Patel", "Category": "PROTECTED_HEALTH_INFORMATION", "Type": "NAME", "Score": 0.99},
+                        {"Text": "chest pain", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.96},
+                        {"Text": "shortness of breath", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.94}
+                    ],
+                    'created_at': datetime.now() - timedelta(days=2),
+                    'updated_at': datetime.now() - timedelta(days=2),
+                    'prescription': {
+                        'prescription_id': 102,
+                        'patient_name': 'Rajesh Patel',
+                        'medications': [
+                            {"name": "Aspirin", "dosage": "75mg", "frequency": "Once daily", "duration": "Ongoing"}
+                        ],
+                        'created_at': datetime.now() - timedelta(days=2)
+                    }
+                },
+                4: {
+                    'consultation_id': 4,
+                    'patient_name': 'Sunita Reddy',
+                    'status': 'COMPLETED',
+                    'transcript_text': 'Routine checkup. Blood pressure slightly elevated at 140/90. Advised lifestyle modifications including reduced salt intake and regular exercise.',
+                    'medical_entities': [
+                        {"Text": "Sunita Reddy", "Category": "PROTECTED_HEALTH_INFORMATION", "Type": "NAME", "Score": 0.99},
+                        {"Text": "elevated blood pressure", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.95}
+                    ],
+                    'created_at': datetime.now() - timedelta(days=3),
+                    'updated_at': datetime.now() - timedelta(days=3),
+                    'prescription': {
+                        'prescription_id': 103,
+                        'patient_name': 'Sunita Reddy',
+                        'medications': [
+                            {"name": "Amlodipine", "dosage": "5mg", "frequency": "Once daily", "duration": "30 days"}
+                        ],
+                        'created_at': datetime.now() - timedelta(days=3)
+                    }
+                },
+                5: {
+                    'consultation_id': 5,
+                    'patient_name': 'Vikram Singh',
+                    'status': 'COMPLETED',
+                    'transcript_text': 'Patient complains of back pain after lifting heavy objects. Physical examination shows muscle strain. Prescribed pain relief medication and advised rest.',
+                    'medical_entities': [
+                        {"Text": "Vikram Singh", "Category": "PROTECTED_HEALTH_INFORMATION", "Type": "NAME", "Score": 0.99},
+                        {"Text": "back pain", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.97},
+                        {"Text": "muscle strain", "Category": "MEDICAL_CONDITION", "Type": "DX_NAME", "Score": 0.94}
+                    ],
+                    'created_at': datetime.now() - timedelta(days=5),
+                    'updated_at': datetime.now() - timedelta(days=5),
+                    'prescription': None
+                }
+            }
+            
+            if consultation_id not in mock_consultations:
+                abort(404)
+            
+            consultation_data = mock_consultations[consultation_id]
+            return render_template('consultation_detail.html', consultation=consultation_data)
+        
+        # Query transcription by transcription_id
+        query_transcription = """
+        SELECT 
+            transcription_id,
+            user_id,
+            transcript_text,
+            status,
+            medical_entities,
+            created_at,
+            updated_at
+        FROM transcriptions
+        WHERE transcription_id = %s AND user_id = %s
+        """
+        
+        transcription_result = database_manager.execute_with_retry(
+            query_transcription, 
+            (consultation_id, user_id)
+        )
+        
+        # Handle missing transcription (404 error)
+        if not transcription_result or len(transcription_result) == 0:
+            logger.warning(f"Transcription {consultation_id} not found for user {user_id}")
+            abort(404)
+        
+        transcription_row = transcription_result[0]
+        (trans_id, trans_user_id, transcript_text, status, medical_entities_json,
+         created_at, updated_at) = transcription_row
+        
+        # Parse medical_entities JSONB
+        medical_entities = []
+        if medical_entities_json:
+            try:
+                if isinstance(medical_entities_json, str):
+                    medical_entities = json.loads(medical_entities_json)
+                else:
+                    medical_entities = medical_entities_json
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse medical_entities for transcription {consultation_id}: {str(e)}")
+                medical_entities = []
+        
+        # Query associated prescription (if exists)
+        query_prescription = """
+        SELECT 
+            prescription_id,
+            patient_name,
+            medications,
+            created_at
+        FROM prescriptions
+        WHERE user_id = %s 
+            AND created_at >= %s 
+            AND created_at <= %s + INTERVAL '1 hour'
+        ORDER BY created_at ASC
+        LIMIT 1
+        """
+        
+        prescription_result = database_manager.execute_with_retry(
+            query_prescription,
+            (user_id, created_at, created_at)
+        )
+        
+        prescription = None
+        if prescription_result and len(prescription_result) > 0:
+            presc_row = prescription_result[0]
+            (presc_id, patient_name, medications, presc_created_at) = presc_row
+            
+            # Parse medications JSONB
+            medications_list = []
+            if medications:
+                try:
+                    if isinstance(medications, str):
+                        medications_list = json.loads(medications)
+                    else:
+                        medications_list = medications
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Failed to parse medications for prescription {presc_id}: {str(e)}")
+                    medications_list = []
+            
+            prescription = {
+                'prescription_id': presc_id,
+                'patient_name': patient_name,
+                'medications': medications_list,
+                'created_at': presc_created_at
+            }
+        
+        # Extract patient name using ConsultationService logic
+        from services.consultation_service import ConsultationService
+        patient_name = ConsultationService._extract_patient_name(
+            prescription['patient_name'] if prescription else None,
+            medical_entities
+        )
+        
+        # Prepare template data
+        consultation_data = {
+            'consultation_id': trans_id,
+            'patient_name': patient_name,
+            'status': status,
+            'transcript_text': transcript_text if transcript_text else "No transcript available",
+            'medical_entities': medical_entities,
+            'created_at': created_at,
+            'updated_at': updated_at,
+            'prescription': prescription
+        }
+        
+        # Render consultation_detail.html template with data
+        return render_template('consultation_detail.html', consultation=consultation_data)
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve consultation {consultation_id}: {str(e)}", exc_info=True)
+        abort(500)
 
 
 # API Endpoints
@@ -845,6 +1089,140 @@ def api_get_hospital_config(hospital_id):
             'status': 'error',
             'error_code': 'INTERNAL_ERROR',
             'error_message': 'Failed to retrieve configuration'
+        }), 500
+
+
+@app.route('/api/consultations', methods=['GET'])
+@login_required
+def api_get_consultations():
+    """
+    API endpoint for consultation retrieval
+    
+    Retrieve recent consultations for authenticated user
+    
+    Query Parameters:
+        limit (int, optional): Maximum consultations to return (default: 10, max: 50)
+    
+    Returns:
+        JSON response with consultation list or error
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Extract user_id from session
+        user_id = session.get('user_id')
+        
+        if not user_id:
+            logger.warning("API consultation request without user_id in session")
+            return jsonify({
+                'success': False,
+                'error': 'Authentication required'
+            }), 401
+        
+        # Parse and validate limit query parameter
+        limit = request.args.get('limit', '10')
+        try:
+            limit = int(limit)
+            # Cap limit at 50, default to 10 if invalid
+            if limit < 1 or limit > 50:
+                logger.warning(f"Invalid limit parameter: {limit}, using default 10")
+                limit = 10
+        except ValueError:
+            logger.warning(f"Non-integer limit parameter: {limit}, using default 10")
+            limit = 10
+        
+        # Check if we should use mock data (for local development)
+        use_mock_data = os.getenv('USE_MOCK_CONSULTATIONS', 'false').lower() == 'true'
+        
+        if use_mock_data:
+            logger.info("Using mock consultation data for development")
+            from datetime import datetime, timedelta
+            mock_consultations = [
+                {
+                    "consultation_id": "1",
+                    "patient_name": "Arjun Kumar",
+                    "patient_initials": "AK",
+                    "status": "COMPLETED",
+                    "created_at": (datetime.now() - timedelta(hours=2)).isoformat(),
+                    "has_prescription": True,
+                    "prescription_id": "101",
+                    "transcript_preview": "Patient complains of headache and fever for the past 3 days..."
+                },
+                {
+                    "consultation_id": "2",
+                    "patient_name": "Priya Sharma",
+                    "patient_initials": "PS",
+                    "status": "COMPLETED",
+                    "created_at": (datetime.now() - timedelta(days=1)).isoformat(),
+                    "has_prescription": False,
+                    "prescription_id": None,
+                    "transcript_preview": "Follow-up visit for diabetes management..."
+                },
+                {
+                    "consultation_id": "3",
+                    "patient_name": "Rajesh Patel",
+                    "patient_initials": "RP",
+                    "status": "IN_PROGRESS",
+                    "created_at": (datetime.now() - timedelta(days=2)).isoformat(),
+                    "has_prescription": True,
+                    "prescription_id": "102",
+                    "transcript_preview": "Patient reports chest pain and shortness of breath..."
+                },
+                {
+                    "consultation_id": "4",
+                    "patient_name": "Sunita Reddy",
+                    "patient_initials": "SR",
+                    "status": "COMPLETED",
+                    "created_at": (datetime.now() - timedelta(days=3)).isoformat(),
+                    "has_prescription": True,
+                    "prescription_id": "103",
+                    "transcript_preview": "Routine checkup, blood pressure slightly elevated..."
+                },
+                {
+                    "consultation_id": "5",
+                    "patient_name": "Vikram Singh",
+                    "patient_initials": "VS",
+                    "status": "COMPLETED",
+                    "created_at": (datetime.now() - timedelta(days=5)).isoformat(),
+                    "has_prescription": False,
+                    "prescription_id": None,
+                    "transcript_preview": "Patient complains of back pain after lifting heavy objects..."
+                }
+            ]
+            
+            consultations = mock_consultations[:limit]
+            return jsonify({
+                'success': True,
+                'consultations': consultations,
+                'count': len(consultations)
+            }), 200
+        
+        # Import ConsultationService
+        from services.consultation_service import ConsultationService
+        
+        # Call ConsultationService.get_recent_consultations()
+        consultations = ConsultationService.get_recent_consultations(
+            user_id=user_id,
+            db_manager=database_manager,
+            limit=limit
+        )
+        
+        # Return JSON response with consultation list
+        logger.info(f"Retrieved {len(consultations)} consultations for user {user_id}")
+        return jsonify({
+            'success': True,
+            'consultations': consultations,
+            'count': len(consultations)
+        }), 200
+        
+    except Exception as e:
+        # Log error with sufficient detail for debugging
+        logger.error(f"Failed to retrieve consultations: {str(e)}", exc_info=True)
+        
+        # Return user-friendly error message without exposing internal details
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve consultations. Please try again later.'
         }), 500
 
 

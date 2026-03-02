@@ -8,6 +8,63 @@ let currentData = null;
 let repeatableSectionCounters = {};
 
 /**
+ * Normalize backend PrescriptionData into the shape expected by renderer:
+ * {
+ *   sections: {
+ *     patient_details: { field: value, field_data: {confidence, source_text}, ... },
+ *     medications: [{...}, {...}]
+ *   }
+ * }
+ * @param {object|null} prescriptionData
+ * @returns {object|null}
+ */
+function normalizePrescriptionData(prescriptionData) {
+    if (!prescriptionData || !Array.isArray(prescriptionData.sections)) {
+        return null;
+    }
+
+    const normalized = { sections: {} };
+
+    prescriptionData.sections.forEach((section) => {
+        if (!section || !section.section_id || !Array.isArray(section.fields)) {
+            return;
+        }
+
+        const match = /^(.+)_([0-9]+)$/.exec(section.section_id);
+        const baseSectionId = match ? match[1] : section.section_id;
+        const repeatIndex = match ? parseInt(match[2], 10) : null;
+
+        const fieldMap = {};
+        section.fields.forEach((field) => {
+            if (!field || !field.field_name) return;
+            fieldMap[field.field_name] = field.value ?? '';
+            fieldMap[`${field.field_name}_data`] = {
+                confidence: field.confidence,
+                source_text: field.source_text || null
+            };
+        });
+
+        if (repeatIndex !== null) {
+            if (!Array.isArray(normalized.sections[baseSectionId])) {
+                normalized.sections[baseSectionId] = [];
+            }
+            normalized.sections[baseSectionId][repeatIndex] = fieldMap;
+        } else {
+            normalized.sections[baseSectionId] = fieldMap;
+        }
+    });
+
+    // Remove sparse array holes if any indexes were skipped.
+    Object.keys(normalized.sections).forEach((key) => {
+        if (Array.isArray(normalized.sections[key])) {
+            normalized.sections[key] = normalized.sections[key].filter(Boolean);
+        }
+    });
+
+    return normalized;
+}
+
+/**
  * Initialize the prescription form
  * @param {string} hospitalId - Hospital identifier
  * @param {object} prescriptionData - Extracted prescription data (optional)
@@ -19,7 +76,7 @@ async function initializePrescriptionForm(hospitalId, prescriptionData) {
         
         // Load hospital configuration
         currentConfig = await loadHospitalConfiguration(hospitalId);
-        currentData = prescriptionData;
+        currentData = normalizePrescriptionData(prescriptionData);
         
         // Update hospital name
         if (currentConfig.hospital_name) {
@@ -27,7 +84,7 @@ async function initializePrescriptionForm(hospitalId, prescriptionData) {
         }
         
         // Render form sections
-        renderFormSections(currentConfig, prescriptionData);
+        renderFormSections(currentConfig, currentData);
         
         // Show form
         hideLoading();
