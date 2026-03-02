@@ -156,8 +156,8 @@ class TranscriptionController {
             await this.websocket.connect();
             this._updateStatus('Starting session...');
 
-            // Start session
-            this.websocket.startSession();
+            // Start session and wait for server acknowledgment before audio streaming
+            await this._startSessionAndWaitForAck();
 
             // Start audio capture
             this.audioCapture.start();
@@ -175,6 +175,64 @@ class TranscriptionController {
             // Cleanup on error
             this._cleanup();
         }
+    }
+
+    /**
+     * Start websocket session and wait until session_ack arrives
+     */
+    _startSessionAndWaitForAck(timeoutMs = 10000) {
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            let timeoutId = null;
+            let unsubscribeAck = null;
+            let unsubscribeError = null;
+
+            const cleanup = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                if (unsubscribeAck) {
+                    unsubscribeAck();
+                }
+                if (unsubscribeError) {
+                    unsubscribeError();
+                }
+            };
+
+            const onAck = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve();
+            };
+
+            const onError = (error) => {
+                if (settled) return;
+                if (error && error.error_code === 'SESSION_START_FAILED') {
+                    settled = true;
+                    cleanup();
+                    reject(new Error(error.message || 'Failed to start transcription session'));
+                }
+            };
+
+            unsubscribeAck = this.websocket.on('session_ack', onAck);
+            unsubscribeError = this.websocket.on('error', onError);
+
+            timeoutId = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error('Timed out waiting for session acknowledgment'));
+            }, timeoutMs);
+
+            try {
+                this.websocket.startSession();
+            } catch (error) {
+                settled = true;
+                cleanup();
+                reject(error);
+            }
+        });
     }
 
     /**
@@ -306,6 +364,13 @@ class TranscriptionController {
      */
     getTranscript() {
         return this.display.getTranscript();
+    }
+
+    /**
+     * Backward-compatible alias used by page scripts.
+     */
+    getTranscriptText() {
+        return this.getTranscript();
     }
 }
 

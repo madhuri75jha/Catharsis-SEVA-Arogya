@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}SEVA Arogya - AI-Assisted Prescription{% endblock %}
+
+{% block content %}
+<div class="relative flex h-auto min-h-screen w-full flex-col overflow-x-hidden">
+    <!-- Header Section -->
+    <div class="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+        <div class="text-primary flex size-10 shrink-0 items-center justify-center cursor-pointer" onclick="goBack()">
+            <span class="material-symbols-outlined">arrow_back_ios</span>
+        </div>
+        <div class="flex flex-col items-center flex-1">
+            <h2 class="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight">AI-Assisted Prescription</h2>
+            <p class="text-xs text-slate-500 font-medium">Review & Edit Extracted Data</p>
+        </div>
+        <div class="flex w-10 items-center justify-end">
+            <button class="text-primary" onclick="showHelp()">
+                <span class="material-symbols-outlined">help</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loadingState" class="flex flex-col items-center justify-center p-8 space-y-4">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p class="text-slate-600 dark:text-slate-400 text-sm">Loading configuration...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div id="errorState" class="hidden p-4">
+        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="material-symbols-outlined text-red-600">error</span>
+                <h4 class="text-red-600 dark:text-red-400 text-sm font-bold">Error Loading Configuration</h4>
+            </div>
+            <p id="errorMessage" class="text-red-600 dark:text-red-400 text-xs"></p>
+        </div>
+    </div>
+    
+    <!-- Main Form Container -->
+    <div id="formContainer" class="hidden p-4 space-y-4 pb-32">
+        <!-- Digital Prescription Form (Paper Style) -->
+        <div class="relative bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden">
+            <div class="rx-watermark">℞</div>
+            
+            <!-- Clinic Header -->
+            <div class="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div class="flex flex-col">
+                    <h1 class="text-primary text-xl font-bold" id="hospitalName">Hospital Name</h1>
+                    <p class="text-slate-500 text-sm">AI-Assisted Prescription</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-slate-400 text-xs mt-1" id="currentDate"></p>
+                </div>
+            </div>
+            
+            <!-- Dynamic Form Sections -->
+            <div id="dynamicSections"></div>
+        </div>
+        
+        <!-- Legend for Confidence Indicators -->
+        <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="material-symbols-outlined text-primary text-lg">info</span>
+                <h4 class="text-slate-700 dark:text-slate-300 text-sm font-bold">Confidence Indicators</h4>
+            </div>
+            <div class="flex flex-wrap gap-3 text-xs">
+                <div class="flex items-center gap-1">
+                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span class="text-slate-600 dark:text-slate-400">High (&gt;80%)</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                    <span class="text-slate-600 dark:text-slate-400">Medium (50-80%)</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span class="text-slate-600 dark:text-slate-400">Low (&lt;50%)</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <div class="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-600"></div>
+                    <span class="text-slate-600 dark:text-slate-400">Manual Entry</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Sticky Footer -->
+    <div id="footerActions" class="hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 p-4 pb-8 safe-area-bottom">
+        <div class="flex gap-3 max-w-md mx-auto">
+            <button onclick="saveDraft()" class="flex-1 h-14 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined">save</span>
+                Save Draft
+            </button>
+            <button onclick="finalizePrescription()" class="flex-[2] h-14 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+                <span class="material-symbols-outlined">check_circle</span>
+                Finalize
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Context Modal -->
+<div id="contextModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeContextModal(event)">
+    <div class="bg-white dark:bg-slate-900 rounded-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-slate-900 dark:text-white text-lg font-bold">Source Context</h3>
+            <button onclick="closeContextModal()" class="text-slate-400 hover:text-slate-600">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div id="contextContent" class="text-slate-700 dark:text-slate-300 text-sm leading-relaxed"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/bedrock_prescription.js') }}"></script>
+<script>
+    // Set current date
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    document.getElementById('currentDate').textContent = 
+        new Date().toLocaleDateString('en-US', options);
+    
+    function goBack() {
+        window.history.back();
+    }
+    
+    function showHelp() {
+        alert('AI-Assisted Prescription:\n\n• Green indicators show high confidence extractions\n• Yellow indicators show medium confidence - please review\n• Red indicators show low confidence - verify carefully\n• Click the info icon next to fields to see source context\n• All fields are editable regardless of confidence');
+    }
+    
+    function closeContextModal(event) {
+        if (event) event.stopPropagation();
+        document.getElementById('contextModal').classList.add('hidden');
+    }
+    
+    function saveDraft() {
+        alert('Draft saved! (Feature coming soon)');
+    }
+    
+    function finalizePrescription() {
+        if (confirm('Finalize this prescription? You can still edit it later.')) {
+            alert('Prescription finalized! (Integration with prescription system coming soon)');
+        }
+    }
+    
+    // Initialize form on page load
+    window.addEventListener('DOMContentLoaded', () => {
+        // Get hospital_id from URL params or use default
+        const urlParams = new URLSearchParams(window.location.search);
+        const hospitalId = urlParams.get('hospital_id') || 'default';
+        
+        // Get prescription data from sessionStorage if available
+        const prescriptionDataJson = sessionStorage.getItem('prescriptionData');
+        const prescriptionData = prescriptionDataJson ? JSON.parse(prescriptionDataJson) : null;
+        
+        // Initialize the form
+        initializePrescriptionForm(hospitalId, prescriptionData);
+    });
+</script>
+{% endblock %}

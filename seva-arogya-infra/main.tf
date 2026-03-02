@@ -220,6 +220,8 @@ module "ecs" {
     AWS_REGION                = var.aws_region
     AWS_TRANSCRIBE_REGION     = var.aws_region
     AWS_COMPREHEND_REGION     = var.comprehend_region
+    BEDROCK_REGION            = var.bedrock_region
+    BEDROCK_MODEL_ID          = var.bedrock_model_id
     EVENTLET_NO_GREENDNS      = "yes"
     AWS_COGNITO_USER_POOL_ID  = module.cognito.user_pool_id
     AWS_COGNITO_CLIENT_ID     = module.cognito.app_client_id

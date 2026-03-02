@@ -4,7 +4,6 @@ Flask-SocketIO Event Handlers for Real-Time Audio Transcription Streaming
 Handles WebSocket connections, audio streaming, and transcription result delivery.
 """
 
-import asyncio
 import uuid
 import time
 from datetime import datetime
@@ -96,6 +95,8 @@ def register_handlers(socketio):
     @socketio.on('session_start')
     def handle_session_start(data):
         """Handle session start - initialize transcription"""
+        session_id = None
+        stream_started = False
         try:
             user_id = session.get('user_id')
             payload = data if isinstance(data, dict) else {}
@@ -129,21 +130,40 @@ def register_handlers(socketio):
             # Start AWS Transcribe streaming (async)
             def result_callback(sess_id, result_data):
                 """Callback to emit transcription results"""
-                socketio.emit('transcription_result', result_data, room=sess_id)
+                target_room = None
+                try:
+                    active_session = session_manager.get_session(sess_id)
+                    if active_session:
+                        target_room = active_session.request_sid
+
+                        # Persist only final transcript segments once to avoid
+                        # duplicate text in DB from repeated partial updates.
+                        if not result_data.get('is_partial'):
+                            segment_id = result_data.get('segment_id')
+                            text = (result_data.get('text') or '').strip()
+                            if text:
+                                if not hasattr(active_session, 'persisted_final_segments'):
+                                    active_session.persisted_final_segments = set()
+                                if segment_id not in active_session.persisted_final_segments:
+                                    database_manager.append_transcript_text(sess_id, text)
+                                    active_session.persisted_final_segments.add(segment_id)
+                except Exception:
+                    target_room = None
+
+                if target_room:
+                    socketio.emit('transcription_result', result_data, room=target_room)
+                else:
+                    # Fallback: emit without room to avoid silently dropping results.
+                    socketio.emit('transcription_result', result_data)
             
-            # Create async task to start stream
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            stream_info = loop.run_until_complete(
-                transcribe_streaming_manager.start_stream(
-                    session_id=session_id,
-                    sample_rate=streaming_session.sample_rate,
-                    result_callback=result_callback,
-                    language_code='en-US',
-                    specialty='PRIMARYCARE'
-                )
+            stream_info = transcribe_streaming_manager.start_stream(
+                session_id=session_id,
+                sample_rate=streaming_session.sample_rate,
+                result_callback=result_callback,
+                language_code='en-US',
+                specialty='PRIMARYCARE'
             )
+            stream_started = True
             
             streaming_session.transcribe_stream = stream_info
             
@@ -186,6 +206,14 @@ def register_handlers(socketio):
         except RuntimeError as e:
             # Session limit or other runtime error
             logger.error(f"Session start failed: {str(e)}")
+            if session_id:
+                try:
+                    if stream_started:
+                        transcribe_streaming_manager.end_stream(session_id)
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed stream cleanup after session start error: {cleanup_error}")
+                finally:
+                    session_manager.remove_session(session_id)
             emit('error', {
                 'type': 'error',
                 'error_code': 'SESSION_LIMIT_EXCEEDED' if 'capacity' in str(e) else 'SESSION_START_FAILED',
@@ -196,6 +224,14 @@ def register_handlers(socketio):
             
         except Exception as e:
             logger.error(f"Session start error: {str(e)}")
+            if session_id:
+                try:
+                    if stream_started:
+                        transcribe_streaming_manager.end_stream(session_id)
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed stream cleanup after session start exception: {cleanup_error}")
+                finally:
+                    session_manager.remove_session(session_id)
             emit('error', {
                 'type': 'error',
                 'error_code': 'SESSION_START_FAILED',
@@ -238,8 +274,13 @@ def register_handlers(socketio):
                 
             else:
                 # JSON data with session_id
+                if not isinstance(data, dict):
+                    logger.warning(f"Invalid audio chunk payload type: {type(data)}")
+                    return
+
                 session_id = data.get('session_id')
                 audio_data = data.get('audio_data')  # Base64 encoded
+                chunk_id = data.get('chunk_id')
                 
                 if not session_id or not audio_data:
                     logger.warning("Missing session_id or audio_data")
@@ -260,17 +301,57 @@ def register_handlers(socketio):
                 
                 # Decode audio data
                 import base64
-                audio_bytes = base64.b64decode(audio_data)
+                try:
+                    audio_bytes = base64.b64decode(audio_data, validate=True)
+                except Exception:
+                    logger.warning(f"Invalid base64 audio payload: session={session_id}")
+                    emit('error', {
+                        'type': 'error',
+                        'error_code': 'INVALID_AUDIO_CHUNK',
+                        'message': 'Invalid audio chunk format',
+                        'recoverable': True,
+                        'timestamp': time.time()
+                    })
+                    return
+
+                if not audio_bytes:
+                    logger.warning(f"Empty audio payload received: session={session_id}")
+                    return
+
+                # Optional chunk sequencing: drop duplicate/replayed chunks.
+                if chunk_id is not None:
+                    try:
+                        chunk_id_int = int(chunk_id)
+                    except (TypeError, ValueError):
+                        logger.warning(f"Invalid chunk_id: session={session_id}, chunk_id={chunk_id}")
+                        chunk_id_int = None
+
+                    if chunk_id_int is not None:
+                        last_chunk_id = getattr(streaming_session, 'last_chunk_id', -1)
+                        if chunk_id_int <= last_chunk_id:
+                            logger.debug(
+                                f"Dropped duplicate/replayed chunk: session={session_id}, "
+                                f"chunk_id={chunk_id_int}, last_chunk_id={last_chunk_id}"
+                            )
+                            return
+                        streaming_session.last_chunk_id = chunk_id_int
                 
                 # Buffer audio for later S3 upload
                 streaming_session.audio_buffer.append(audio_bytes)
                 
                 # Forward to AWS Transcribe
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(
+                try:
                     transcribe_streaming_manager.send_audio_chunk(session_id, audio_bytes)
-                )
+                except RuntimeError as stream_error:
+                    logger.warning(f"Audio stream unavailable: session={session_id}, error={stream_error}")
+                    emit('error', {
+                        'type': 'error',
+                        'error_code': 'STREAM_NOT_READY',
+                        'message': 'Transcription stream is not ready',
+                        'recoverable': True,
+                        'timestamp': time.time()
+                    })
+                    return
                 
                 # Update activity
                 session_manager.update_activity(session_id)
@@ -305,11 +386,7 @@ def register_handlers(socketio):
                 return
             
             # End transcribe stream
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(
-                transcribe_streaming_manager.end_stream(session_id)
-            )
+            transcribe_streaming_manager.end_stream(session_id)
             
             # Finalize audio buffer to MP3
             audio_buffer = streaming_session.audio_buffer
@@ -444,11 +521,7 @@ def shutdown_handler(socketio_instance):
                     
                     # End transcribe stream
                     if transcribe_streaming_manager:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(
-                            transcribe_streaming_manager.end_stream(session_id)
-                        )
+                        transcribe_streaming_manager.end_stream(session_id)
                     
                 except Exception as e:
                     logger.error(f"Error closing session {session_id}: {str(e)}")
@@ -458,11 +531,7 @@ def shutdown_handler(socketio_instance):
         
         # Cleanup transcribe streams
         if transcribe_streaming_manager:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            count = loop.run_until_complete(
-                transcribe_streaming_manager.cleanup_all_streams()
-            )
+            count = transcribe_streaming_manager.cleanup_all_streams()
             logger.info(f"Cleaned up {count} transcribe streams")
         
         logger.info("Graceful shutdown complete")

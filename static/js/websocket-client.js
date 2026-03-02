@@ -17,6 +17,8 @@ class TranscriptionWebSocket {
         this.maxReconnectAttempts = 3;
         this.reconnectDelay = 1000; // Start with 1 second
         this.audioBuffer = [];
+        this.bufferedBytes = 0;
+        this.nextChunkId = 0;
         this.maxBufferSize = 5 * 16000 * 2; // 5 seconds at 16kHz, 16-bit
         this.eventHandlers = {
             connected: [],
@@ -35,6 +37,25 @@ class TranscriptionWebSocket {
     async connect() {
         return new Promise((resolve, reject) => {
             try {
+                // Reuse an already connected socket instead of creating duplicates.
+                if (this.socket && this.socket.connected) {
+                    this.isConnected = true;
+                    resolve();
+                    return;
+                }
+
+                // Ensure stale sockets are fully torn down before creating a new one.
+                if (this.socket) {
+                    try {
+                        this.socket.removeAllListeners();
+                        this.socket.disconnect();
+                    } catch (cleanupError) {
+                        console.warn('Error cleaning up stale socket:', cleanupError);
+                    }
+                    this.socket = null;
+                    this.isConnected = false;
+                }
+
                 // Initialize Socket.IO connection
                 this.socket = io(this.url, {
                     transports: ['websocket', 'polling'],
@@ -151,6 +172,7 @@ class TranscriptionWebSocket {
         }
 
         this.sessionId = this._generateSessionId();
+        this.nextChunkId = 0;
         
         const sessionData = {
             type: 'session_start',
@@ -168,11 +190,14 @@ class TranscriptionWebSocket {
      * Send audio chunk to server
      * 
      * @param {ArrayBuffer|Int16Array} audioData - PCM audio data
+     * @param {boolean} isFlushingBuffer - Internal flag to prevent recursive flushing
      */
-    sendAudioChunk(audioData) {
+    sendAudioChunk(audioData, isFlushingBuffer = false, forcedChunkId = null) {
+        const chunkId = Number.isInteger(forcedChunkId) ? forcedChunkId : this.nextChunkId++;
+
         if (!this.isConnected) {
             // Buffer audio during disconnection
-            this._bufferAudio(audioData);
+            this._bufferAudio(audioData, chunkId);
             return;
         }
 
@@ -189,13 +214,14 @@ class TranscriptionWebSocket {
 
             const chunkData = {
                 session_id: this.sessionId,
-                audio_data: base64Audio
+                audio_data: base64Audio,
+                chunk_id: chunkId
             };
 
             this.socket.emit('audio_chunk', chunkData);
 
-            // Send any buffered audio
-            if (this.audioBuffer.length > 0) {
+            // Send any buffered audio (but only if not already flushing to prevent recursion)
+            if (!isFlushingBuffer && this.audioBuffer.length > 0) {
                 this._flushBuffer();
             }
 
@@ -229,6 +255,7 @@ class TranscriptionWebSocket {
         
         this.sessionId = null;
         this.audioBuffer = [];
+        this.bufferedBytes = 0;
     }
 
     /**
@@ -242,28 +269,34 @@ class TranscriptionWebSocket {
         this.isConnected = false;
         this.sessionId = null;
         this.audioBuffer = [];
+        this.bufferedBytes = 0;
         console.log('WebSocket disconnected');
     }
 
     /**
      * Buffer audio during temporary disconnection
      */
-    _bufferAudio(audioData) {
+    _bufferAudio(audioData, chunkId) {
         const int16Array = audioData instanceof Int16Array ? audioData : new Int16Array(audioData);
         const bytes = int16Array.length * 2;
 
-        if (this.audioBuffer.length + bytes > this.maxBufferSize) {
+        if (this.bufferedBytes + bytes > this.maxBufferSize) {
             console.warn('Audio buffer overflow, dropping oldest chunks');
             // Remove oldest chunks to make room
             const removeBytes = bytes;
             let removed = 0;
             while (removed < removeBytes && this.audioBuffer.length > 0) {
                 const chunk = this.audioBuffer.shift();
-                removed += chunk.length * 2;
+                removed += chunk.data.length * 2;
             }
+            this.bufferedBytes = Math.max(0, this.bufferedBytes - removed);
         }
 
-        this.audioBuffer.push(int16Array);
+        this.audioBuffer.push({
+            id: chunkId,
+            data: int16Array
+        });
+        this.bufferedBytes += bytes;
         console.log(`Buffered audio chunk: ${this.audioBuffer.length} chunks in buffer`);
     }
 
@@ -275,7 +308,9 @@ class TranscriptionWebSocket {
         
         while (this.audioBuffer.length > 0) {
             const chunk = this.audioBuffer.shift();
-            this.sendAudioChunk(chunk);
+            this.bufferedBytes = Math.max(0, this.bufferedBytes - (chunk.data.length * 2));
+            // Pass true to prevent recursive flushing
+            this.sendAudioChunk(chunk.data, true, chunk.id);
         }
     }
 
@@ -322,6 +357,22 @@ class TranscriptionWebSocket {
         }
         
         this.eventHandlers[event].push(callback);
+        return () => this.off(event, callback);
+    }
+
+    /**
+     * Unregister event handler
+     *
+     * @param {string} event - Event name
+     * @param {Function} callback - Callback function
+     */
+    off(event, callback) {
+        if (!this.eventHandlers[event]) {
+            return;
+        }
+
+        this.eventHandlers[event] = this.eventHandlers[event]
+            .filter(handler => handler !== callback);
     }
 
     /**

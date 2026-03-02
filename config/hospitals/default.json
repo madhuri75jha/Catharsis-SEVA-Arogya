@@ -1,0 +1,202 @@
+{
+  "hospital_id": "default",
+  "hospital_name": "Default Hospital Configuration",
+  "version": "1.0",
+  "sections": [
+    {
+      "section_id": "patient_details",
+      "section_label": "Patient Details",
+      "display_order": 1,
+      "repeatable": false,
+      "fields": [
+        {
+          "field_name": "patient_name",
+          "display_label": "Name",
+          "field_type": "text",
+          "required": true,
+          "display_order": 1,
+          "max_length": 100,
+          "description": "The full name of the patient as mentioned in the consultation. Look for phrases like 'patient name is', 'this is', or names mentioned at the beginning of the transcript. Extract the complete first and last name."
+        },
+        {
+          "field_name": "patient_age",
+          "display_label": "Age",
+          "field_type": "number",
+          "required": true,
+          "display_order": 2,
+          "min_value": 0,
+          "max_value": 150,
+          "description": "The patient's age in years. Look for phrases like 'years old', 'age is', or age mentioned in patient demographics. Extract only the numeric value."
+        },
+        {
+          "field_name": "patient_sex",
+          "display_label": "Sex",
+          "field_type": "dropdown",
+          "required": true,
+          "display_order": 3,
+          "options": ["Male", "Female", "Other"],
+          "description": "The patient's biological sex or gender. Look for pronouns (he/she/they), explicit mentions of 'male', 'female', or gender-specific medical terms. Map to one of: Male, Female, or Other."
+        },
+        {
+          "field_name": "patient_weight",
+          "display_label": "Weight",
+          "field_type": "text",
+          "required": false,
+          "display_order": 4,
+          "placeholder": "e.g., 78 kg",
+          "unit": "kg",
+          "description": "The patient's body weight with unit. Look for phrases like 'weighs', 'weight is', or weight mentioned in vitals. Extract the numeric value and unit (kg, lbs, pounds). Convert to kg if possible and format as 'X kg'."
+        },
+        {
+          "field_name": "patient_id",
+          "display_label": "Patient ID",
+          "field_type": "text",
+          "required": true,
+          "display_order": 5,
+          "max_length": 50,
+          "description": "The unique patient identifier or medical record number. Look for phrases like 'patient ID', 'MRN', 'medical record number', 'patient number', or alphanumeric codes mentioned in patient identification. Extract the complete identifier."
+        }
+      ]
+    },
+    {
+      "section_id": "vitals",
+      "section_label": "Vitals",
+      "display_order": 2,
+      "repeatable": false,
+      "fields": [
+        {
+          "field_name": "blood_pressure",
+          "display_label": "BP",
+          "field_type": "text",
+          "required": false,
+          "display_order": 1,
+          "placeholder": "e.g., 120/80",
+          "unit": "mmHg",
+          "description": "The patient's blood pressure reading in systolic/diastolic format. Look for phrases like 'blood pressure', 'BP is', or vital signs. Extract in format 'X/Y' where X is systolic and Y is diastolic (e.g., 120/80)."
+        },
+        {
+          "field_name": "heart_rate",
+          "display_label": "HR",
+          "field_type": "text",
+          "required": false,
+          "display_order": 2,
+          "placeholder": "e.g., 72 bpm",
+          "unit": "bpm",
+          "description": "The patient's heart rate in beats per minute. Look for phrases like 'heart rate', 'pulse', 'HR', or vital signs. Extract the numeric value and format as 'X bpm'."
+        },
+        {
+          "field_name": "temperature",
+          "display_label": "TEMP",
+          "field_type": "text",
+          "required": false,
+          "display_order": 3,
+          "placeholder": "e.g., 98.6°F",
+          "unit": "°F",
+          "description": "The patient's body temperature with unit. Look for phrases like 'temperature', 'temp', 'fever', or vital signs. Extract the numeric value and unit (°F, °C, Fahrenheit, Celsius). Format as 'X°F' or 'X°C'."
+        },
+        {
+          "field_name": "oxygen_saturation",
+          "display_label": "SPO2",
+          "field_type": "text",
+          "required": false,
+          "display_order": 4,
+          "placeholder": "e.g., 98%",
+          "unit": "%",
+          "description": "The patient's oxygen saturation level as a percentage. Look for phrases like 'oxygen saturation', 'SpO2', 'O2 sat', or vital signs. Extract the numeric value and format as 'X%'."
+        }
+      ]
+    },
+    {
+      "section_id": "diagnosis",
+      "section_label": "Diagnosis",
+      "display_order": 3,
+      "repeatable": false,
+      "fields": [
+        {
+          "field_name": "diagnosis",
+          "display_label": "Diagnosis",
+          "field_type": "multiline",
+          "required": true,
+          "display_order": 1,
+          "rows": 4,
+          "max_length": 1000,
+          "description": "The primary medical diagnosis or condition identified during the consultation. Look for phrases like 'diagnosis is', 'diagnosed with', 'condition', 'suffering from', or the doctor's assessment section. Extract the complete medical condition name and any relevant qualifiers (acute, chronic, mild, severe). Include ICD codes if mentioned."
+        }
+      ]
+    },
+    {
+      "section_id": "medications",
+      "section_label": "Medications",
+      "display_order": 4,
+      "repeatable": true,
+      "fields": [
+        {
+          "field_name": "medicine_name",
+          "display_label": "Medicine Name",
+          "field_type": "text",
+          "required": true,
+          "display_order": 1,
+          "max_length": 200,
+          "description": "The generic or brand name of the medication prescribed. Look for phrases like 'I'm prescribing', 'take', 'medication', 'give', 'start on', or prescription instructions. Extract the complete drug name (generic preferred, but include brand name if that's what's mentioned)."
+        },
+        {
+          "field_name": "medicine_type",
+          "display_label": "Medicine Type",
+          "field_type": "text",
+          "required": false,
+          "display_order": 2,
+          "placeholder": "e.g., Capsule, Tablet, Syrup",
+          "max_length": 50,
+          "description": "The pharmaceutical form of the medication. Look for words like 'tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'inhaler' mentioned with the medication name. Extract the form type."
+        },
+        {
+          "field_name": "dose",
+          "display_label": "Dose",
+          "field_type": "text",
+          "required": true,
+          "display_order": 3,
+          "placeholder": "e.g., 500mg, 10ml",
+          "max_length": 50,
+          "description": "The dosage amount and unit for each administration. Look for numeric values followed by units like 'mg', 'ml', 'mcg', 'tablets', 'capsules', 'teaspoons' in medication instructions. Extract the numeric value and unit (e.g., 500mg, 2 tablets, 10ml). If a range is given, use the standard dose."
+        },
+        {
+          "field_name": "frequency",
+          "display_label": "Frequency",
+          "field_type": "dropdown",
+          "required": true,
+          "display_order": 4,
+          "options": ["OD", "BDS", "TDS", "QID", "PRN", "STAT"],
+          "description": "How often the medication should be taken. Look for phrases describing frequency and map to standard abbreviations: 'once daily/once a day/one time' → OD, 'twice daily/twice a day/two times' → BDS, 'three times daily/thrice' → TDS, 'four times daily' → QID, 'as needed/when required/if needed' → PRN, 'immediately/right now/stat' → STAT."
+        },
+        {
+          "field_name": "duration",
+          "display_label": "Duration",
+          "field_type": "text",
+          "required": true,
+          "display_order": 5,
+          "placeholder": "e.g., 7 Days, 2 Weeks",
+          "max_length": 50,
+          "description": "The total length of time the medication should be taken. Look for phrases like 'for X days', 'for X weeks', 'for X months', 'continue for', 'course of'. Extract the numeric value and time unit. Format as 'X Days', 'X Weeks', or 'X Months'. If ongoing, use 'Ongoing' or 'Until review'."
+        }
+      ]
+    },
+    {
+      "section_id": "clinical_notes",
+      "section_label": "Clinical Notes",
+      "display_order": 5,
+      "repeatable": false,
+      "fields": [
+        {
+          "field_name": "clinical_notes",
+          "display_label": "Clinical Notes",
+          "field_type": "multiline",
+          "required": false,
+          "display_order": 1,
+          "rows": 6,
+          "max_length": 2000,
+          "description": "Additional clinical observations, patient history, examination findings, or special instructions not captured in other fields. Look for the doctor's notes, observations, patient complaints, examination findings, follow-up instructions, warnings, or any other relevant clinical information. Summarize key points concisely."
+        }
+      ]
+    }
+  ]
+}

@@ -37,6 +37,9 @@ class ConfigManager:
         self.config = {
             'aws_region': self.region,
             'aws_comprehend_region': os.getenv('AWS_COMPREHEND_REGION', self.region),
+            'bedrock_region': os.getenv('BEDROCK_REGION', 'us-east-1'),
+            # Default to Claude 3 Haiku for lower cost while keeping tool/function support.
+            'bedrock_model_id': os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0'),
             'cognito_user_pool_id': os.getenv('AWS_COGNITO_USER_POOL_ID'),
             'cognito_client_id': os.getenv('AWS_COGNITO_CLIENT_ID'),
             'cognito_client_secret': os.getenv('AWS_COGNITO_CLIENT_SECRET'),
@@ -246,3 +249,144 @@ class ConfigManager:
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by key"""
         return self.config.get(key, default)
+
+
+# Hospital Configuration Management
+from pathlib import Path
+from models.bedrock_extraction import HospitalConfiguration
+from pydantic import ValidationError
+
+
+class ConfigurationNotFoundError(Exception):
+    """Raised when hospital configuration is not found"""
+    pass
+
+
+class ConfigurationValidationError(Exception):
+    """Raised when hospital configuration is invalid"""
+    pass
+
+
+# Add these methods to ConfigManager class (monkey-patch for now)
+def _init_hospital_config(self):
+    """Initialize hospital configuration cache"""
+    if not hasattr(self, '_hospital_config_cache'):
+        self._hospital_config_cache = {}
+        self._hospital_config_dir = Path('config/hospitals')
+
+
+def load_hospital_configuration(self, hospital_id: str) -> HospitalConfiguration:
+    """
+    Load and validate hospital configuration from JSON file
+    
+    Args:
+        hospital_id: Hospital identifier
+        
+    Returns:
+        Validated HospitalConfiguration object
+        
+    Raises:
+        ConfigurationNotFoundError: If configuration file doesn't exist
+        ConfigurationValidationError: If configuration is invalid
+    """
+    self._init_hospital_config()
+    
+    # Check cache first
+    if hospital_id in self._hospital_config_cache:
+        logger.debug(f"Retrieved hospital config '{hospital_id}' from cache")
+        return self._hospital_config_cache[hospital_id]
+    
+    # Build file path
+    config_file = self._hospital_config_dir / f"{hospital_id}.json"
+    
+    if not config_file.exists():
+        logger.warning(f"Hospital configuration file not found: {config_file}")
+        raise ConfigurationNotFoundError(
+            f"Hospital configuration not found for hospital_id: {hospital_id}"
+        )
+    
+    try:
+        # Load JSON file
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+        
+        # Validate using Pydantic model
+        hospital_config = self.validate_hospital_configuration(config_data)
+        
+        # Cache the validated configuration
+        self._hospital_config_cache[hospital_id] = hospital_config
+        
+        logger.info(f"Loaded and validated hospital configuration for '{hospital_id}'")
+        return hospital_config
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in hospital configuration file {config_file}: {e}")
+        raise ConfigurationValidationError(
+            f"Invalid JSON in configuration file for {hospital_id}: {str(e)}"
+        ) from e
+    except Exception as e:
+        logger.error(f"Error loading hospital configuration for {hospital_id}: {e}")
+        raise
+
+
+def get_default_hospital_configuration(self) -> HospitalConfiguration:
+    """
+    Get default hospital configuration
+    
+    Returns:
+        Default HospitalConfiguration object
+        
+    Raises:
+        ConfigurationNotFoundError: If default configuration doesn't exist
+    """
+    return self.load_hospital_configuration('default')
+
+
+def validate_hospital_configuration(self, config_dict: dict) -> HospitalConfiguration:
+    """
+    Validate hospital configuration structure using Pydantic
+    
+    Args:
+        config_dict: Configuration dictionary to validate
+        
+    Returns:
+        Validated HospitalConfiguration object
+        
+    Raises:
+        ConfigurationValidationError: If configuration is invalid
+    """
+    try:
+        hospital_config = HospitalConfiguration(**config_dict)
+        logger.debug(f"Validated hospital configuration for '{hospital_config.hospital_id}'")
+        return hospital_config
+    except ValidationError as e:
+        logger.error(f"Hospital configuration validation failed: {e}")
+        raise ConfigurationValidationError(
+            f"Invalid hospital configuration: {str(e)}"
+        ) from e
+
+
+def invalidate_hospital_config_cache(self, hospital_id: Optional[str] = None):
+    """
+    Invalidate hospital configuration cache for hot-reload
+    
+    Args:
+        hospital_id: Specific hospital ID to invalidate, or None to clear all
+    """
+    self._init_hospital_config()
+    
+    if hospital_id:
+        if hospital_id in self._hospital_config_cache:
+            del self._hospital_config_cache[hospital_id]
+            logger.info(f"Invalidated cache for hospital config '{hospital_id}'")
+    else:
+        self._hospital_config_cache.clear()
+        logger.info("Cleared all hospital configuration cache")
+
+
+# Monkey-patch the methods onto ConfigManager
+ConfigManager._init_hospital_config = _init_hospital_config
+ConfigManager.load_hospital_configuration = load_hospital_configuration
+ConfigManager.get_default_hospital_configuration = get_default_hospital_configuration
+ConfigManager.validate_hospital_configuration = validate_hospital_configuration
+ConfigManager.invalidate_hospital_config_cache = invalidate_hospital_config_cache

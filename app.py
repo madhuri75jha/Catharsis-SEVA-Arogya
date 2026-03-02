@@ -293,6 +293,13 @@ def final_prescription():
     return render_template('final_prescription.html')
 
 
+@app.route('/bedrock-prescription')
+@login_required
+def bedrock_prescription():
+    """AI-assisted prescription page with Bedrock extraction"""
+    return render_template('bedrock_prescription.html')
+
+
 # API Endpoints
 @app.route('/api/v1/auth/login', methods=['POST'])
 def api_login():
@@ -735,6 +742,110 @@ def api_download_prescription(prescription_id):
     except Exception as e:
         logger.error(f"Download URL generation error: {str(e)}")
         return jsonify({'success': False, 'message': 'An error occurred'}), 500
+
+
+# Bedrock Medical Extraction Endpoints
+@app.route('/api/v1/extract', methods=['POST'])
+@login_required
+def api_extract_prescription():
+    """API endpoint for medical prescription extraction using Bedrock"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Parse request
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'INVALID_INPUT',
+                'error_message': 'Request body is required'
+            }), 400
+        
+        # Validate request using Pydantic model
+        from models.bedrock_extraction import ExtractionRequest
+        from pydantic import ValidationError
+        
+        try:
+            extraction_request = ExtractionRequest(**data)
+        except ValidationError as e:
+            logger.warning(f"Invalid extraction request: {e}")
+            return jsonify({
+                'status': 'error',
+                'error_code': 'VALIDATION_ERROR',
+                'error_message': str(e)
+            }), 400
+        
+        # Initialize extraction pipeline if not already done
+        from aws_services.extraction_pipeline import ExtractionPipeline
+        extraction_pipeline = ExtractionPipeline(config_manager)
+        
+        # Validate request
+        is_valid, error_msg = extraction_pipeline.validate_request(extraction_request)
+        if not is_valid:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'INVALID_INPUT',
+                'error_message': error_msg
+            }), 400
+        
+        # Extract prescription data
+        logger.info(f"Starting extraction for hospital {extraction_request.hospital_id}")
+        prescription_data = extraction_pipeline.extract_prescription_data(
+            transcript=extraction_request.transcript,
+            hospital_id=extraction_request.hospital_id,
+            request_id=extraction_request.request_id
+        )
+        
+        if prescription_data is None:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'EXTRACTION_FAILED',
+                'error_message': 'Failed to extract prescription data'
+            }), 500
+        
+        # Return success response
+        return jsonify({
+            'status': 'success',
+            'prescription_data': prescription_data.model_dump(mode='json'),
+            'request_id': prescription_data.request_id
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Extraction error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INTERNAL_ERROR',
+            'error_message': 'An unexpected error occurred'
+        }), 500
+
+
+@app.route('/api/v1/config/<hospital_id>', methods=['GET'])
+@login_required
+def api_get_hospital_config(hospital_id):
+    """API endpoint to get hospital configuration"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        from aws_services.config_manager import ConfigurationNotFoundError
+        
+        # Load hospital configuration
+        try:
+            hospital_config = config_manager.load_hospital_configuration(hospital_id)
+        except ConfigurationNotFoundError:
+            logger.warning(f"Hospital config not found for {hospital_id}, using default")
+            hospital_config = config_manager.get_default_hospital_configuration()
+        
+        # Return configuration
+        return jsonify(hospital_config.model_dump(mode='json')), 200
+        
+    except Exception as e:
+        logger.error(f"Config retrieval error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INTERNAL_ERROR',
+            'error_message': 'Failed to retrieve configuration'
+        }), 500
 
 
 # AWS Connectivity check endpoint

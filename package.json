@@ -1,0 +1,23 @@
+{
+  "name": "seva-arogya-audio-tests",
+  "version": "1.0.0",
+  "description": "Property-based tests for audio capture duplicate chunk detection",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:audio": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/audio"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "fast-check": "^3.15.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "transform": {},
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}

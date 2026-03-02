@@ -28,6 +28,7 @@ class Session:
     last_activity: datetime = field(default_factory=datetime.utcnow)
     quality: str = 'medium'
     sample_rate: int = 16000
+    last_chunk_id: int = -1
     
     def update_activity(self):
         """Update last activity timestamp"""

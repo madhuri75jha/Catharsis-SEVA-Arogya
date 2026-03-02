@@ -10,6 +10,18 @@ variable "comprehend_region" {
   default     = "us-east-1"
 }
 
+variable "bedrock_region" {
+  description = "AWS region for Bedrock Runtime"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "bedrock_model_id" {
+  description = "Bedrock model ID used for extraction (must support tool/function use)"
+  type        = string
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+}
+
 variable "project_name" {
   description = "Project name used for resource naming and tagging"
   type        = string

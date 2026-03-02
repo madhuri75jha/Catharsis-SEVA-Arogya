@@ -77,10 +77,14 @@
         </div>
         
         <!-- Action Button -->
-        <div class="px-4 mt-2">
-            <button onclick="stopAndReview()" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-primary text-white shadow-lg shadow-primary/25 active:bg-primary/90 transition-colors">
+        <div class="px-4 mt-2 space-y-2">
+            <button onclick="stopAndExtract()" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-gradient-to-r from-primary to-blue-600 text-white shadow-lg shadow-primary/25 active:opacity-90 transition-all">
+                <span class="material-symbols-outlined text-[24px]">auto_awesome</span>
+                <span class="text-lg font-bold">AI Extract Prescription</span>
+            </button>
+            <button onclick="stopAndReview()" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 active:bg-slate-200 dark:active:bg-slate-700 transition-colors">
                 <span class="material-symbols-outlined text-[24px]">stop_circle</span>
-                <span class="text-lg font-bold">Stop and Review</span>
+                <span class="text-lg font-bold">Manual Review</span>
             </button>
         </div>
         
@@ -98,6 +102,7 @@
 <script src="{{ url_for('static', filename='js/websocket-client.js') }}"></script>
 <script src="{{ url_for('static', filename='js/transcription-display.js') }}"></script>
 <script src="{{ url_for('static', filename='js/transcription-controller.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bedrock_extraction.js') }}"></script>
 <script>
     let seconds = 0;
     let timerInterval;
@@ -133,6 +138,36 @@
             console.error('Error stopping transcription:', error);
             // Navigate anyway to avoid blocking the user
             window.location.href = '/final-prescription';
+        }
+    }
+    
+    // Stop and extract with AI
+    async function stopAndExtract() {
+        try {
+            // Stop the timer
+            clearInterval(timerInterval);
+            
+            // Stop the controller if it's recording
+            if (controller && controller.isRecording) {
+                console.log('Stopping transcription controller...');
+                await controller.stop();
+                console.log('Controller stopped, transcription data saved');
+            }
+            
+            // Get the transcript text
+            const transcriptText = controller.getTranscript ? controller.getTranscript() : '';
+            
+            if (!transcriptText || transcriptText.trim().length === 0) {
+                alert('No transcript available. Please record some audio first.');
+                return;
+            }
+            
+            // Submit for AI extraction
+            await submitTranscriptForExtraction(transcriptText, 'default');
+            
+        } catch (error) {
+            console.error('Error during AI extraction:', error);
+            alert('Failed to extract prescription data. Please try manual review instead.');
         }
     }
     
