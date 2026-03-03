@@ -2,7 +2,12 @@
 import logging
 import time
 import uuid
+import json
 from typing import Optional, Dict, Any
+from urllib.parse import urlparse, unquote
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
+import boto3
 from botocore.exceptions import ClientError
 from .base_client import BaseAWSClient
 
@@ -149,12 +154,7 @@ class TranscribeManager(BaseAWSClient):
                 logger.error(f"Transcript URI not found for job: {job_id}")
                 return None
             
-            # Download transcript from S3
-            import requests
-            response = requests.get(transcript_uri)
-            response.raise_for_status()
-            
-            transcript_data = response.json()
+            transcript_data = self._download_transcript_json(transcript_uri)
             
             # Extract transcript text
             transcript_text = transcript_data.get('results', {}).get('transcripts', [{}])[0].get('transcript', '')
@@ -167,9 +167,61 @@ class TranscribeManager(BaseAWSClient):
                 logger.warning(f"Transcript text is empty for job: {job_id}")
                 return None
             
-        except requests.RequestException as e:
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as e:
             logger.error(f"Failed to download transcript from S3: {str(e)}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error getting transcript: {str(e)}")
             return None
+
+    def _download_transcript_json(self, transcript_uri: str) -> Dict[str, Any]:
+        """
+        Download transcript JSON from transcript URI.
+
+        Primary path uses direct URL fetch. For environments where the URL is not
+        anonymously accessible (HTTP 403/404), fallback to AWS SDK S3 get_object
+        using task role credentials.
+        """
+        try:
+            with urlopen(transcript_uri, timeout=20) as response:
+                body = response.read()
+            return json.loads(body.decode('utf-8'))
+        except HTTPError as e:
+            if e.code not in (403, 404):
+                raise
+            bucket, key = self._extract_s3_bucket_key(transcript_uri)
+            if not bucket or not key:
+                raise
+            s3_client = boto3.client('s3', region_name=self.region)
+            obj = s3_client.get_object(Bucket=bucket, Key=key)
+            body = obj['Body'].read()
+            return json.loads(body.decode('utf-8'))
+
+    @staticmethod
+    def _extract_s3_bucket_key(uri: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Extract (bucket, key) from s3:// or S3 https URL formats.
+        """
+        parsed = urlparse(uri)
+        host = (parsed.netloc or '').lower()
+        path = parsed.path or ''
+
+        if parsed.scheme == 's3':
+            bucket = parsed.netloc
+            key = path.lstrip('/')
+            return bucket or None, unquote(key) or None
+
+        if parsed.scheme in ('http', 'https'):
+            # Virtual-hosted style: bucket.s3.region.amazonaws.com/key
+            if '.s3.' in host or host.endswith('.s3.amazonaws.com'):
+                bucket = host.split('.s3')[0]
+                key = path.lstrip('/')
+                return bucket or None, unquote(key) or None
+
+            # Path style: s3.region.amazonaws.com/bucket/key
+            if host.startswith('s3.') or host == 's3.amazonaws.com':
+                parts = path.lstrip('/').split('/', 1)
+                if len(parts) == 2:
+                    return parts[0], unquote(parts[1])
+
+        return None, None

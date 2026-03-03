@@ -207,9 +207,28 @@
         window.history.back();
     }
     
-    function finalizePrescription() {
-        alert('Prescription finalized! Ready to print.');
-        // TODO: Implement actual PDF generation and print functionality
+    async function finalizePrescription() {
+        try {
+            const consultationId = new URLSearchParams(window.location.search).get('consultation_id')
+                || sessionStorage.getItem('consultationId');
+
+            if (consultationId) {
+                const res = await fetch(`/api/v1/consultations/${consultationId}/finalize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to finalize consultation');
+                }
+            }
+
+            alert('Prescription finalized! Ready to print.');
+            // TODO: Implement actual PDF generation and print functionality
+        } catch (error) {
+            console.error('Finalize failed:', error);
+            alert(`Failed to finalize consultation: ${error.message}`);
+        }
     }
 
     function buildSectionMaps(prescriptionData) {

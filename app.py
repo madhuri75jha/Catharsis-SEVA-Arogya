@@ -141,6 +141,27 @@ def init_app():
                 try:
                     database_manager.execute_with_retry(Prescription.create_table_sql())
                     database_manager.execute_with_retry(Transcription.create_table_sql())
+                    database_manager.execute_with_retry("""
+                    CREATE TABLE IF NOT EXISTS consultations (
+                        consultation_id VARCHAR(64) PRIMARY KEY,
+                        user_id VARCHAR(255) NOT NULL,
+                        status VARCHAR(50) NOT NULL DEFAULT 'IN_PROGRESS',
+                        merged_transcript_text TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_consultations_user_id ON consultations(user_id);
+                    CREATE INDEX IF NOT EXISTS idx_consultations_created_at ON consultations(created_at DESC);
+                    """)
+                    database_manager.execute_with_retry("""
+                    ALTER TABLE transcriptions
+                    ADD COLUMN IF NOT EXISTS consultation_id VARCHAR(64),
+                    ADD COLUMN IF NOT EXISTS clip_order INTEGER DEFAULT 1;
+                    """)
+                    database_manager.execute_with_retry("""
+                    CREATE INDEX IF NOT EXISTS idx_transcriptions_consultation_id
+                    ON transcriptions(consultation_id);
+                    """)
                     logger.info("Database tables created/verified")
                 except Exception as e:
                     logger.error(f"Failed to create database tables: {str(e)}")
@@ -233,6 +254,56 @@ def _read_log_tail(log_path: str, lines: int) -> str:
         return "".join(deque(f, maxlen=lines))
 
 
+def _rebuild_consultation_transcript(consultation_id: str, user_id: str) -> str:
+    """
+    Rebuild merged transcript text for a consultation from all clip rows.
+
+    Returns merged transcript text (may be empty string).
+    """
+    merged_query = """
+    SELECT COALESCE(
+        STRING_AGG(NULLIF(TRIM(transcript_text), ''), ' ' ORDER BY clip_order, created_at),
+        ''
+    ) AS merged_transcript
+    FROM transcriptions
+    WHERE consultation_id = %s AND user_id = %s
+    """
+    merged_result = database_manager.execute_with_retry(merged_query, (consultation_id, user_id))
+    merged_text = ""
+    if merged_result and len(merged_result) > 0 and merged_result[0][0]:
+        merged_text = merged_result[0][0]
+
+    status_query = """
+    SELECT
+      CASE
+        WHEN c.status = 'COMPLETED' THEN 'COMPLETED'
+        WHEN COUNT(*) FILTER (WHERE t.status = 'FAILED') > 0 THEN 'FAILED'
+        ELSE 'IN_PROGRESS'
+      END AS consultation_status
+    FROM consultations c
+    LEFT JOIN transcriptions t
+      ON t.consultation_id = c.consultation_id
+     AND t.user_id = c.user_id
+    WHERE c.consultation_id = %s AND c.user_id = %s
+    GROUP BY c.status
+    """
+    status_result = database_manager.execute_with_retry(status_query, (consultation_id, user_id))
+    consultation_status = 'IN_PROGRESS'
+    if status_result and len(status_result) > 0 and status_result[0][0]:
+        consultation_status = status_result[0][0]
+
+    update_query = """
+    UPDATE consultations
+    SET merged_transcript_text = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+    WHERE consultation_id = %s AND user_id = %s
+    """
+    database_manager.execute_with_retry(
+        update_query, (merged_text, consultation_status, consultation_id, user_id)
+    )
+
+    return merged_text
+
+
 @app.route('/login')
 def login():
     """Login page"""
@@ -301,17 +372,17 @@ def bedrock_prescription():
     return render_template('bedrock_prescription.html')
 
 
-@app.route('/consultation/<int:consultation_id>')
+@app.route('/consultation/<consultation_id>')
 @login_required
 def consultation_detail(consultation_id):
     """
     Consultation detail view
     
-    Display complete consultation information including transcript, 
+    Display complete consultation information including merged transcript,
     medical entities, and prescription data.
     
     Args:
-        consultation_id: The transcription_id of the consultation
+        consultation_id: The consultation_id or legacy transcription_id
         
     Returns:
         Rendered consultation_detail.html template or 404 error
@@ -427,39 +498,65 @@ def consultation_detail(consultation_id):
                 }
             }
             
-            if consultation_id not in mock_consultations:
+            mock_key = int(consultation_id) if str(consultation_id).isdigit() else consultation_id
+            if mock_key not in mock_consultations:
                 abort(404)
             
-            consultation_data = mock_consultations[consultation_id]
+            consultation_data = mock_consultations[mock_key]
             return render_template('consultation_detail.html', consultation=consultation_data)
         
-        # Query transcription by transcription_id
-        query_transcription = """
-        SELECT 
-            transcription_id,
-            user_id,
-            transcript_text,
-            status,
-            medical_entities,
-            created_at,
-            updated_at
-        FROM transcriptions
-        WHERE transcription_id = %s AND user_id = %s
+        # Query consultation-level data first
+        query_consultation = """
+        SELECT
+            c.consultation_id,
+            c.user_id,
+            c.merged_transcript_text,
+            c.status,
+            (
+                SELECT t.medical_entities
+                FROM transcriptions t
+                WHERE t.consultation_id = c.consultation_id
+                  AND t.user_id = c.user_id
+                  AND t.medical_entities IS NOT NULL
+                ORDER BY t.updated_at DESC, t.created_at DESC
+                LIMIT 1
+            ) AS medical_entities,
+            c.created_at,
+            c.updated_at
+        FROM consultations c
+        WHERE c.consultation_id = %s AND c.user_id = %s
         """
-        
-        transcription_result = database_manager.execute_with_retry(
-            query_transcription, 
+        consultation_result = database_manager.execute_with_retry(
+            query_consultation,
             (consultation_id, user_id)
         )
-        
-        # Handle missing transcription (404 error)
-        if not transcription_result or len(transcription_result) == 0:
-            logger.warning(f"Transcription {consultation_id} not found for user {user_id}")
+
+        # Backward compatibility for legacy consultation links by transcription_id
+        if not consultation_result and str(consultation_id).isdigit():
+            legacy_query = """
+            SELECT
+                CAST(t.transcription_id AS VARCHAR),
+                t.user_id,
+                t.transcript_text,
+                t.status,
+                t.medical_entities,
+                t.created_at,
+                t.updated_at
+            FROM transcriptions t
+            WHERE t.transcription_id = %s AND t.user_id = %s
+            """
+            consultation_result = database_manager.execute_with_retry(
+                legacy_query,
+                (int(consultation_id), user_id)
+            )
+
+        if not consultation_result or len(consultation_result) == 0:
+            logger.warning(f"Consultation {consultation_id} not found for user {user_id}")
             abort(404)
-        
-        transcription_row = transcription_result[0]
-        (trans_id, trans_user_id, transcript_text, status, medical_entities_json,
-         created_at, updated_at) = transcription_row
+
+        consultation_row = consultation_result[0]
+        (consultation_id_value, trans_user_id, transcript_text, status, medical_entities_json,
+         created_at, updated_at) = consultation_row
         
         # Parse medical_entities JSONB
         medical_entities = []
@@ -470,7 +567,7 @@ def consultation_detail(consultation_id):
                 else:
                     medical_entities = medical_entities_json
             except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Failed to parse medical_entities for transcription {consultation_id}: {str(e)}")
+                logger.warning(f"Failed to parse medical_entities for consultation {consultation_id}: {str(e)}")
                 medical_entities = []
         
         # Query associated prescription (if exists)
@@ -516,6 +613,26 @@ def consultation_detail(consultation_id):
                 'medications': medications_list,
                 'created_at': presc_created_at
             }
+
+        clip_rows = database_manager.execute_with_retry(
+            """
+            SELECT clip_order, job_id, status, audio_s3_key, transcript_text, created_at
+            FROM transcriptions
+            WHERE consultation_id = %s AND user_id = %s
+            ORDER BY clip_order ASC, created_at ASC
+            """,
+            (str(consultation_id_value), user_id)
+        ) or []
+        clips = []
+        for clip_order, clip_job_id, clip_status, clip_audio_s3_key, clip_transcript_text, clip_created_at in clip_rows:
+            clips.append({
+                'clip_order': clip_order,
+                'job_id': clip_job_id,
+                'status': clip_status,
+                'audio_s3_key': clip_audio_s3_key,
+                'transcript_preview': (clip_transcript_text or '')[:140],
+                'created_at': clip_created_at
+            })
         
         # Extract patient name using ConsultationService logic
         from services.consultation_service import ConsultationService
@@ -526,11 +643,12 @@ def consultation_detail(consultation_id):
         
         # Prepare template data
         consultation_data = {
-            'consultation_id': trans_id,
+            'consultation_id': consultation_id_value,
             'patient_name': patient_name,
             'status': status,
             'transcript_text': transcript_text if transcript_text else "No transcript available",
             'medical_entities': medical_entities,
+            'clips': clips,
             'created_at': created_at,
             'updated_at': updated_at,
             'prescription': prescription
@@ -770,6 +888,36 @@ def api_upload_audio():
         return jsonify({'success': False, 'message': 'An error occurred during upload'}), 500
 
 
+@app.route('/api/v1/consultations/start', methods=['POST'])
+@login_required
+def api_start_consultation():
+    """Create a new consultation container for multiple audio clips."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        import uuid
+
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        consultation_id = str(uuid.uuid4())
+        query = """
+        INSERT INTO consultations (consultation_id, user_id, status, merged_transcript_text)
+        VALUES (%s, %s, 'IN_PROGRESS', '')
+        """
+        database_manager.execute_with_retry(query, (consultation_id, user_id))
+
+        logger.info(f"Consultation started: consultation_id={consultation_id}, user={user_id}")
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id
+        })
+    except Exception as e:
+        logger.error(f"Failed to start consultation: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to start consultation'}), 500
+
+
 @app.route('/api/v1/transcribe', methods=['POST'])
 @login_required
 def api_transcribe():
@@ -779,11 +927,33 @@ def api_transcribe():
     try:
         data = request.get_json()
         s3_key = data.get('s3_key', '')
+        consultation_id = data.get('consultation_id', '')
+        clip_order = data.get('clip_order', 1)
         
         if not s3_key:
             return jsonify({'success': False, 'message': 'S3 key required'}), 400
+        if not consultation_id:
+            return jsonify({'success': False, 'message': 'consultation_id required'}), 400
+
+        try:
+            clip_order = int(clip_order)
+            if clip_order < 1:
+                clip_order = 1
+        except (TypeError, ValueError):
+            clip_order = 1
         
         user_id = session.get('user_id')
+        consultation_exists = database_manager.execute_with_retry(
+            """
+            SELECT consultation_id
+            FROM consultations
+            WHERE consultation_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+        if not consultation_exists:
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
         
         # Get S3 URI for transcription
         audio_uri = storage_manager.get_audio_uri(s3_key)
@@ -804,12 +974,30 @@ def api_transcribe():
                 status='IN_PROGRESS'
             )
             transcription.save(database_manager)
+            database_manager.execute_with_retry(
+                """
+                UPDATE transcriptions
+                SET consultation_id = %s, clip_order = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = %s AND user_id = %s
+                """,
+                (consultation_id, clip_order, job_id, user_id)
+            )
+            database_manager.execute_with_retry(
+                """
+                UPDATE consultations
+                SET status = 'IN_PROGRESS', updated_at = CURRENT_TIMESTAMP
+                WHERE consultation_id = %s AND user_id = %s
+                """,
+                (consultation_id, user_id)
+            )
             
             logger.info(f"Transcription job started: {job_id}")
             return jsonify({
                 'success': True,
                 'message': 'Transcription started',
-                'job_id': job_id
+                'job_id': job_id,
+                'consultation_id': consultation_id,
+                'clip_order': clip_order
             })
         else:
             return jsonify({'success': False, 'message': 'Failed to start transcription'}), 500
@@ -826,6 +1014,7 @@ def api_transcribe_status(job_id):
     logger = logging.getLogger(__name__)
     
     try:
+        user_id = session.get('user_id')
         status_info = transcribe_manager.get_job_status(job_id)
         
         if status_info:
@@ -834,6 +1023,19 @@ def api_transcribe_status(job_id):
             if transcription and transcription.status != status_info['status']:
                 transcription.status = status_info['status']
                 transcription.update(database_manager)
+
+            if user_id:
+                consultation_result = database_manager.execute_with_retry(
+                    """
+                    SELECT consultation_id
+                    FROM transcriptions
+                    WHERE job_id = %s AND user_id = %s
+                    LIMIT 1
+                    """,
+                    (job_id, user_id)
+                )
+                if consultation_result and consultation_result[0][0]:
+                    _rebuild_consultation_transcript(consultation_result[0][0], user_id)
             
             return jsonify({
                 'success': True,
@@ -855,6 +1057,7 @@ def api_transcribe_result(job_id):
     logger = logging.getLogger(__name__)
     
     try:
+        user_id = session.get('user_id')
         # Get transcript from Transcribe
         transcript_text = transcribe_manager.get_transcript(job_id)
         
@@ -874,23 +1077,230 @@ def api_transcribe_result(job_id):
         
         # Update database
         transcription = Transcription.get_by_job_id(job_id, database_manager)
+        consultation_id = None
         if transcription:
             transcription.transcript_text = transcript_text
             transcription.medical_entities = entities
             transcription.status = 'COMPLETED'
             transcription.update(database_manager)
+            if user_id:
+                consultation_result = database_manager.execute_with_retry(
+                    """
+                    SELECT consultation_id
+                    FROM transcriptions
+                    WHERE job_id = %s AND user_id = %s
+                    LIMIT 1
+                    """,
+                    (job_id, user_id)
+                )
+                if consultation_result and consultation_result[0][0]:
+                    consultation_id = consultation_result[0][0]
+                    _rebuild_consultation_transcript(consultation_id, user_id)
         
         logger.info(f"Transcript and entities retrieved for job: {job_id}")
         return jsonify({
             'success': True,
             'transcript': transcript_text,
             'entities': entities,
-            'categorized_entities': categorized_entities
+            'categorized_entities': categorized_entities,
+            'consultation_id': consultation_id
         })
         
     except Exception as e:
         logger.error(f"Result retrieval error: {str(e)}")
         return jsonify({'success': False, 'message': 'An error occurred'}), 500
+
+
+@app.route('/api/v1/transcribe/transcript/<job_id>', methods=['PUT'])
+@login_required
+def api_update_transcript_text(job_id):
+    """Update transcript text after manual user edits."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        data = request.get_json(silent=True) or {}
+        transcript_text = (data.get('transcript_text') or '').strip()
+
+        if not transcript_text:
+            return jsonify({'success': False, 'message': 'transcript_text is required'}), 400
+
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        update_query = """
+        UPDATE transcriptions
+        SET transcript_text = %s, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = %s AND user_id = %s
+        """
+        database_manager.execute_with_retry(update_query, (transcript_text, job_id, user_id))
+
+        verify_query = """
+        SELECT transcription_id
+        FROM transcriptions
+        WHERE job_id = %s AND user_id = %s
+        LIMIT 1
+        """
+        result = database_manager.execute_with_retry(verify_query, (job_id, user_id))
+        if not result:
+            return jsonify({'success': False, 'message': 'Transcription not found'}), 404
+
+        logger.info(f"Transcript updated by user edit: job_id={job_id}, user={user_id}")
+        return jsonify({
+            'success': True,
+            'message': 'Transcript updated successfully',
+            'job_id': job_id
+        })
+
+    except Exception as e:
+        logger.error(f"Transcript update error for job {job_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to update transcript'}), 500
+
+
+@app.route('/api/v1/consultations/<consultation_id>/transcript', methods=['GET'])
+@login_required
+def api_get_consultation_transcript(consultation_id):
+    """Get merged transcript for a consultation."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        row = database_manager.execute_with_retry(
+            """
+            SELECT consultation_id, status, merged_transcript_text
+            FROM consultations
+            WHERE consultation_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+        if not row:
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
+
+        merged_text = _rebuild_consultation_transcript(consultation_id, user_id)
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id,
+            'status': row[0][1],
+            'transcript': merged_text
+        })
+    except Exception as e:
+        logger.error(f"Failed to get consultation transcript {consultation_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to load transcript'}), 500
+
+
+@app.route('/api/v1/consultations/<consultation_id>/transcript', methods=['PUT'])
+@login_required
+def api_update_consultation_transcript(consultation_id):
+    """Save edited merged transcript for a consultation."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        data = request.get_json(silent=True) or {}
+        transcript_text = (data.get('transcript_text') or '').strip()
+        if not transcript_text:
+            return jsonify({'success': False, 'message': 'transcript_text is required'}), 400
+
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        exists = database_manager.execute_with_retry(
+            """
+            SELECT consultation_id
+            FROM consultations
+            WHERE consultation_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+        if not exists:
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
+
+        database_manager.execute_with_retry(
+            """
+            UPDATE consultations
+            SET merged_transcript_text = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE consultation_id = %s AND user_id = %s
+            """,
+            (transcript_text, consultation_id, user_id)
+        )
+
+        # Keep at least one underlying clip row aligned for downstream consumers.
+        database_manager.execute_with_retry(
+            """
+            UPDATE transcriptions t
+            SET transcript_text = %s, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+            WHERE t.transcription_id = (
+                SELECT t2.transcription_id
+                FROM transcriptions t2
+                WHERE t2.consultation_id = %s AND t2.user_id = %s
+                ORDER BY t2.clip_order DESC, t2.created_at DESC
+                LIMIT 1
+            )
+            """,
+            (transcript_text, consultation_id, user_id)
+        )
+
+        logger.info(f"Consultation transcript updated: consultation_id={consultation_id}, user={user_id}")
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id,
+            'message': 'Transcript updated successfully'
+        })
+    except Exception as e:
+        logger.error(f"Failed to update consultation transcript {consultation_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to update transcript'}), 500
+
+
+@app.route('/api/v1/consultations/<consultation_id>/finalize', methods=['POST'])
+@login_required
+def api_finalize_consultation(consultation_id):
+    """Mark consultation as completed when user confirms finalization."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        merged_text = _rebuild_consultation_transcript(consultation_id, user_id)
+        if not merged_text or not merged_text.strip():
+            return jsonify({'success': False, 'message': 'Cannot finalize empty consultation'}), 400
+
+        exists = database_manager.execute_with_retry(
+            """
+            SELECT consultation_id
+            FROM consultations
+            WHERE consultation_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+        if not exists:
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
+
+        database_manager.execute_with_retry(
+            """
+            UPDATE consultations
+            SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+            WHERE consultation_id = %s AND user_id = %s
+            """,
+            (consultation_id, user_id)
+        )
+
+        logger.info(f"Consultation finalized: consultation_id={consultation_id}, user={user_id}")
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id,
+            'status': 'COMPLETED'
+        })
+    except Exception as e:
+        logger.error(f"Failed to finalize consultation {consultation_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to finalize consultation'}), 500
 
 
 @app.route('/api/v1/prescriptions', methods=['POST'])

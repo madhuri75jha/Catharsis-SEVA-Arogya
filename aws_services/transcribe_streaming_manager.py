@@ -15,6 +15,28 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+def _get_native_thread_class():
+    """
+    Return an unpatched Thread class when running under eventlet/gevent monkey patching.
+
+    Flask-SocketIO with eventlet can patch ``threading.Thread`` into green threads.
+    Asyncio event loops must run in dedicated native OS threads; otherwise repeated
+    stream starts can raise "Cannot run the event loop while another loop is running".
+    """
+    try:
+        # Optional dependency in eventlet-based deployments.
+        from eventlet import patcher  # type: ignore
+        original_threading = patcher.original('threading')
+        thread_cls = getattr(original_threading, 'Thread', None)
+        if thread_cls is not None:
+            return thread_cls
+    except Exception:
+        pass
+    return threading.Thread
+
+
+NATIVE_THREAD_CLASS = _get_native_thread_class()
+
 
 class TranscribeResultHandler(TranscriptResultStreamHandler):
     """
@@ -140,16 +162,34 @@ class TranscribeStreamingManager:
             asyncio.set_event_loop(loop)
             loop.run_forever()
 
-        thread = threading.Thread(target=_runner, daemon=True)
+        thread = NATIVE_THREAD_CLASS(target=_runner, daemon=True)
         thread.start()
         return loop, thread
 
     @staticmethod
-    def _run_in_loop(loop: asyncio.AbstractEventLoop, coro):
+    def _run_in_loop(loop: asyncio.AbstractEventLoop, coro, timeout_seconds: float = 8.0):
         """
         Execute coroutine in a specific loop and wait for completion.
+
+        Raises:
+            TimeoutError: If coroutine does not complete within timeout_seconds.
         """
         future = asyncio.run_coroutine_threadsafe(coro, loop)
+        # Avoid Future.result() blocking path under eventlet-monkey-patched
+        # synchronization primitives, which can trigger cross-thread greenlet
+        # switch errors. Poll completion instead, then read result.
+        start_time = time.time()
+        while not future.done():
+            if (time.time() - start_time) > timeout_seconds:
+                future.cancel()
+                raise TimeoutError(
+                    f"Coroutine execution timed out after {timeout_seconds:.1f}s"
+                )
+            try:
+                import eventlet  # type: ignore
+                eventlet.sleep(0.01)
+            except Exception:
+                time.sleep(0.01)
         return future.result()
 
     async def _send_audio_worker(self, session_id: str, stream, audio_queue: asyncio.Queue):
@@ -230,7 +270,7 @@ class TranscribeStreamingManager:
                 )
                 return stream_info_local
 
-            stream_info = self._run_in_loop(session_loop, _initialize())
+            stream_info = self._run_in_loop(session_loop, _initialize(), timeout_seconds=8.0)
             self._active_streams[session_id] = stream_info
             
             logger.info(f"Transcribe stream started: session={session_id}")
@@ -359,7 +399,7 @@ class TranscribeStreamingManager:
                         # Do not block teardown on result-task drain issues
                         pass
 
-            self._run_in_loop(session_loop, _end())
+            self._run_in_loop(session_loop, _end(), timeout_seconds=8.0)
         except Exception as e:
             logger.error(f"Error ending stream: session={session_id}, error={str(e)}")
         finally:

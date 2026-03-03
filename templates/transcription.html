@@ -23,25 +23,25 @@
     <!-- Main Transcription Area (Top 2/3) -->
     <div class="flex-1 px-6 pt-8 overflow-y-auto">
         <div id="transcription-display" class="space-y-6">
-            <!-- Hidden elements required by TranscriptionController -->
-            <button id="start-recording" style="display: none;"></button>
-            <button id="stop-recording" style="display: none;"></button>
-            <div id="status-indicator" style="display: none;"></div>
-            
-            <!-- Actual transcription content container -->
+            <div class="flex items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Transcript</h3>
+                <div class="flex items-center gap-2">
+                    <button id="edit-transcript" class="h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Edit
+                    </button>
+                    <button id="save-transcript" class="hidden h-8 px-3 rounded-lg bg-primary text-white text-xs font-semibold">
+                        Save
+                    </button>
+                    <button id="cancel-edit" class="hidden h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+            <div id="status-indicator" class="text-xs text-slate-500 dark:text-slate-400">Hold the button below and speak.</div>
             <div id="transcriptionContent" class="space-y-6">
-                <!-- Text flow mimicking speech to text -->
-                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                    Ramesh... <span class="text-primary">45 years old</span>... 
+                <p id="transcript-text" class="text-[#111418] dark:text-white tracking-tight text-[24px] font-semibold leading-snug">
+                    Press and hold the mic button to record. Release to transcribe.
                 </p>
-                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                    History of <span class="text-primary">fever for 3 days</span>... 
-                </p>
-                <p class="text-[#111418] dark:text-white tracking-tight text-[30px] font-semibold leading-snug">
-                    Patient reports <span class="bg-primary/10 border-b-2 border-primary">sharp pain in lower abdomen</span>, localized to the right...
-                </p>
-                <!-- Real-time cursor effect -->
-                <div class="inline-block w-1 h-8 bg-primary animate-pulse ml-1 align-middle"></div>
             </div>
         </div>
     </div>
@@ -78,13 +78,13 @@
         
         <!-- Action Button -->
         <div class="px-4 mt-2 space-y-2">
+            <button id="hold-to-speak" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-red-600 text-white shadow-lg shadow-red-500/25 active:opacity-90 transition-all select-none touch-none">
+                <span class="material-symbols-outlined text-[24px]">mic</span>
+                <span class="text-lg font-bold">Hold to Speak</span>
+            </button>
             <button onclick="stopAndExtract()" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-gradient-to-r from-primary to-blue-600 text-white shadow-lg shadow-primary/25 active:opacity-90 transition-all">
                 <span class="material-symbols-outlined text-[24px]">auto_awesome</span>
                 <span class="text-lg font-bold">AI Extract Prescription</span>
-            </button>
-            <button onclick="stopAndReview()" class="w-full flex items-center justify-center gap-3 rounded-xl h-14 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 active:bg-slate-200 dark:active:bg-slate-700 transition-colors">
-                <span class="material-symbols-outlined text-[24px]">stop_circle</span>
-                <span class="text-lg font-bold">Manual Review</span>
             </button>
         </div>
         
@@ -97,149 +97,359 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/audio-capture.js') }}"></script>
-<script src="{{ url_for('static', filename='js/websocket-client.js') }}"></script>
-<script src="{{ url_for('static', filename='js/transcription-display.js') }}"></script>
-<script src="{{ url_for('static', filename='js/transcription-controller.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bedrock_extraction.js') }}"></script>
 <script>
     let seconds = 0;
     let timerInterval;
-    let controller;
-    
-    // Start timer
+    let audioCapture = null;
+    let recording = false;
+    let processing = false;
+    let recordedChunks = [];
+    let currentJobId = null;
+    let currentConsultationId = null;
+    let nextClipOrder = 1;
+    let currentTranscript = '';
+
     function startTimer() {
+        clearInterval(timerInterval);
+        seconds = 0;
         timerInterval = setInterval(() => {
             seconds++;
             const minutes = Math.floor(seconds / 60);
             const secs = seconds % 60;
-            document.getElementById('timer').textContent = 
+            document.getElementById('timer').textContent =
                 `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         }, 1000);
     }
-    
-    // Stop and review
-    async function stopAndReview() {
-        try {
-            // Stop the timer
-            clearInterval(timerInterval);
-            
-            // Stop the controller if it's recording
-            if (controller && controller.isRecording) {
-                console.log('Stopping transcription controller...');
-                await controller.stop();
-                console.log('Controller stopped, transcription data saved');
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+
+    function setStatus(text, isError = false) {
+        const status = document.getElementById('status-indicator');
+        status.textContent = text;
+        status.className = isError
+            ? 'text-xs text-red-600 dark:text-red-400'
+            : 'text-xs text-slate-500 dark:text-slate-400';
+    }
+
+    function setTranscript(text) {
+        currentTranscript = text || '';
+        const el = document.getElementById('transcript-text');
+        el.textContent = currentTranscript || 'No transcript yet.';
+    }
+
+    function createWavBlob(chunks, sampleRate = 16000) {
+        const totalSamples = chunks.reduce((sum, c) => sum + c.length, 0);
+        const buffer = new ArrayBuffer(44 + totalSamples * 2);
+        const view = new DataView(buffer);
+        let offset = 0;
+
+        function writeString(s) {
+            for (let i = 0; i < s.length; i++) {
+                view.setUint8(offset++, s.charCodeAt(i));
             }
-            
-            // Navigate to final prescription page
-            window.location.href = '/final-prescription';
+        }
+
+        writeString('RIFF');
+        view.setUint32(offset, 36 + totalSamples * 2, true); offset += 4;
+        writeString('WAVE');
+        writeString('fmt ');
+        view.setUint32(offset, 16, true); offset += 4;
+        view.setUint16(offset, 1, true); offset += 2;
+        view.setUint16(offset, 1, true); offset += 2;
+        view.setUint32(offset, sampleRate, true); offset += 4;
+        view.setUint32(offset, sampleRate * 2, true); offset += 4;
+        view.setUint16(offset, 2, true); offset += 2;
+        view.setUint16(offset, 16, true); offset += 2;
+        writeString('data');
+        view.setUint32(offset, totalSamples * 2, true); offset += 4;
+
+        for (const chunk of chunks) {
+            for (let i = 0; i < chunk.length; i++) {
+                view.setInt16(offset, chunk[i], true);
+                offset += 2;
+            }
+        }
+
+        return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    async function startConsultation() {
+        const res = await fetch('/api/v1/consultations/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || !data.consultation_id) {
+            throw new Error(data.message || 'Failed to start consultation');
+        }
+        currentConsultationId = data.consultation_id;
+        sessionStorage.setItem('consultationId', currentConsultationId);
+        nextClipOrder = 1;
+    }
+
+    async function uploadAndTranscribe(audioBlob) {
+        if (!currentConsultationId) {
+            await startConsultation();
+        }
+
+        const formData = new FormData();
+        formData.append('audio', audioBlob, `recording_${Date.now()}.wav`);
+
+        const uploadRes = await fetch('/api/v1/audio/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.success) {
+            throw new Error(uploadData.message || 'Audio upload failed');
+        }
+
+        const transcribeRes = await fetch('/api/v1/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                s3_key: uploadData.s3_key,
+                consultation_id: currentConsultationId,
+                clip_order: nextClipOrder
+            })
+        });
+        const transcribeData = await transcribeRes.json();
+        if (!transcribeRes.ok || !transcribeData.success) {
+            throw new Error(transcribeData.message || 'Failed to start transcription');
+        }
+
+        nextClipOrder += 1;
+        return transcribeData.job_id;
+    }
+
+    async function pollForResult(jobId) {
+        const maxChecks = 90;
+        for (let i = 0; i < maxChecks; i++) {
+            const statusRes = await fetch(`/api/v1/transcribe/status/${jobId}`);
+            const statusData = await statusRes.json();
+
+            if (!statusRes.ok || !statusData.success) {
+                throw new Error(statusData.message || 'Failed to check transcription status');
+            }
+
+            if (statusData.status === 'COMPLETED') {
+                const resultRes = await fetch(`/api/v1/transcribe/result/${jobId}`);
+                const resultData = await resultRes.json();
+                if (!resultRes.ok || !resultData.success) {
+                    throw new Error(resultData.message || 'Failed to fetch transcription result');
+                }
+                return resultData.transcript || '';
+            }
+
+            if (statusData.status === 'FAILED') {
+                throw new Error('Transcription failed');
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        throw new Error('Transcription timed out');
+    }
+
+    async function beginRecording() {
+        if (recording || processing) return;
+        recording = true;
+        recordedChunks = [];
+
+        const holdButton = document.getElementById('hold-to-speak');
+        holdButton.classList.remove('bg-red-600');
+        holdButton.classList.add('bg-red-700');
+        setStatus('Listening... release to transcribe');
+        startTimer();
+
+        audioCapture = new AudioCapture(16000, 250);
+        audioCapture.on('chunk', (pcmData) => {
+            if (recording) {
+                recordedChunks.push(new Int16Array(pcmData));
+            }
+        });
+        audioCapture.on('error', (error) => {
+            setStatus(error.message || 'Microphone error', true);
+        });
+
+        await audioCapture.initialize();
+        await audioCapture.start();
+    }
+
+    async function endRecording() {
+        if (!recording) return;
+        recording = false;
+        processing = true;
+        stopTimer();
+
+        const holdButton = document.getElementById('hold-to-speak');
+        holdButton.classList.remove('bg-red-700');
+        holdButton.classList.add('bg-red-600');
+
+        try {
+            if (audioCapture) {
+                audioCapture.stop();
+                audioCapture = null;
+            }
+
+            if (recordedChunks.length === 0) {
+                setStatus('No audio captured. Press and hold to speak.', true);
+                return;
+            }
+
+            setStatus('Uploading audio...');
+            const wavBlob = createWavBlob(recordedChunks, 16000);
+            currentJobId = await uploadAndTranscribe(wavBlob);
+
+            setStatus('Transcribing...');
+            const transcript = await pollForResult(currentJobId);
+            const merged = [currentTranscript, transcript].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+            setTranscript(merged);
+            setStatus('Transcript ready');
         } catch (error) {
-            console.error('Error stopping transcription:', error);
-            // Navigate anyway to avoid blocking the user
-            window.location.href = '/final-prescription';
+            console.error('Hold-to-talk flow error:', error);
+            setStatus(error.message || 'Failed to transcribe', true);
+        } finally {
+            processing = false;
+            recordedChunks = [];
         }
     }
-    
-    // Stop and extract with AI
+
+    function enterEditMode() {
+        if (!currentTranscript) return;
+        const container = document.getElementById('transcriptionContent');
+        container.innerHTML = `
+            <textarea id="transcript-editor" class="w-full min-h-[220px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[#111418] dark:text-white p-4 text-base leading-relaxed">${currentTranscript}</textarea>
+        `;
+        document.getElementById('edit-transcript').classList.add('hidden');
+        document.getElementById('save-transcript').classList.remove('hidden');
+        document.getElementById('cancel-edit').classList.remove('hidden');
+        setStatus('Editing transcript...');
+    }
+
+    function exitEditMode() {
+        const container = document.getElementById('transcriptionContent');
+        container.innerHTML = `<p id="transcript-text" class="text-[#111418] dark:text-white tracking-tight text-[24px] font-semibold leading-snug"></p>`;
+        setTranscript(currentTranscript || 'No transcript yet.');
+        document.getElementById('edit-transcript').classList.remove('hidden');
+        document.getElementById('save-transcript').classList.add('hidden');
+        document.getElementById('cancel-edit').classList.add('hidden');
+    }
+
+    async function saveEditedTranscript() {
+        if (!currentConsultationId) {
+            setStatus('No consultation found to save', true);
+            return;
+        }
+
+        const editor = document.getElementById('transcript-editor');
+        const edited = (editor?.value || '').trim();
+        if (!edited) {
+            setStatus('Transcript cannot be empty', true);
+            return;
+        }
+
+        const res = await fetch(`/api/v1/consultations/${currentConsultationId}/transcript`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript_text: edited })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.message || 'Failed to save transcript edits');
+        }
+
+        currentTranscript = edited;
+        exitEditMode();
+        setStatus('Transcript saved');
+    }
+
     async function stopAndExtract() {
         try {
-            // Stop the timer
-            clearInterval(timerInterval);
-            
-            // Stop the controller if it's recording
-            if (controller && controller.isRecording) {
-                console.log('Stopping transcription controller...');
-                await controller.stop();
-                console.log('Controller stopped, transcription data saved');
+            if (recording) {
+                await endRecording();
             }
-            
-            // Get the transcript text
-            const transcriptText = controller.getTranscript ? controller.getTranscript() : '';
-            
-            if (!transcriptText || transcriptText.trim().length === 0) {
+
+            if (!currentTranscript || currentTranscript.trim().length === 0) {
                 alert('No transcript available. Please record some audio first.');
                 return;
             }
-            
-            // Submit for AI extraction
-            await submitTranscriptForExtraction(transcriptText, 'default');
-            
+
+            await submitTranscriptForExtraction(currentTranscript, 'default', {
+                consultationId: currentConsultationId
+            });
         } catch (error) {
             console.error('Error during AI extraction:', error);
-            alert('Failed to extract prescription data. Please try manual review instead.');
+            alert('Failed to extract prescription data. Please retry after editing transcript.');
         }
     }
-    
-    // Initialize TranscriptionController on page load
-    document.addEventListener('DOMContentLoaded', async () => {
-        try {
-            // Get userId from Flask session
-            const userId = '{{ session.user_id }}';
-            
-            // Clear dummy content from transcription-display div
-            const transcriptionDisplay = document.getElementById('transcription-display');
-            if (transcriptionDisplay) {
-                // Keep only the hidden UI elements, remove dummy content
-                const startBtn = document.getElementById('start-recording');
-                const stopBtn = document.getElementById('stop-recording');
-                const statusInd = document.getElementById('status-indicator');
-                
-                transcriptionDisplay.innerHTML = '';
-                
-                // Re-add the hidden elements
-                if (startBtn) transcriptionDisplay.appendChild(startBtn);
-                if (stopBtn) transcriptionDisplay.appendChild(stopBtn);
-                if (statusInd) transcriptionDisplay.appendChild(statusInd);
-                
-                console.log('Cleared dummy content from transcription-display');
-            }
-            
-            // Create TranscriptionController with configuration
-            controller = new TranscriptionController({
-                websocketUrl: window.location.origin,
-                userId: userId,
-                quality: 'medium',
-                sampleRate: 16000,
-                chunkDurationMs: 250
-            });
-            
-            console.log('TranscriptionController created');
-            
-            // Initialize the controller
-            await controller.initialize();
-            console.log('TranscriptionController initialized');
-            
-            // Start transcription automatically
-            await controller.start();
-            console.log('Transcription started automatically');
 
-            // Start the timer when recording begins
-            startTimer();
-            
-        } catch (error) {
-            console.error('Failed to initialize or start transcription:', error);
-            // Stop timer if it was started
-            if (timerInterval) {
-                clearInterval(timerInterval);
-            }
+    // Retained for compatibility with existing navigation flow and tests.
+    async function stopAndReview() {
+        window.location.href = '/final-prescription';
+    }
 
-            // Display error message to user (avoid duplicate error blocks)
-            const transcriptionDisplay = document.getElementById('transcription-display');
-            const hasError = transcriptionDisplay?.querySelector?.('.error-message');
+    document.addEventListener('DOMContentLoaded', () => {
+        const holdButton = document.getElementById('hold-to-speak');
+        const editButton = document.getElementById('edit-transcript');
+        const saveButton = document.getElementById('save-transcript');
+        const cancelButton = document.getElementById('cancel-edit');
 
-            if (controller?.display?.showError && !hasError) {
-                controller.display.showError(`Failed to start transcription: ${error.message}`);
-            } else if (transcriptionDisplay && !hasError) {
-                transcriptionDisplay.insertAdjacentHTML('afterbegin', `
-                    <div class="text-red-600 dark:text-red-400 text-lg font-semibold">
-                        <p>Failed to start transcription</p>
-                        <p class="text-sm mt-2">${error.message}</p>
-                        <p class="text-sm mt-2">Please check microphone permissions and try again.</p>
-                    </div>
-                `);
+        holdButton.addEventListener('pointerdown', async (event) => {
+            event.preventDefault();
+            try {
+                await beginRecording();
+            } catch (error) {
+                setStatus(error.message || 'Failed to start recording', true);
+                recording = false;
+                processing = false;
             }
-        }
+        });
+
+        const stopHandler = async (event) => {
+            event.preventDefault();
+            await endRecording();
+        };
+
+        holdButton.addEventListener('pointerup', stopHandler);
+        holdButton.addEventListener('pointerleave', async () => {
+            if (recording) {
+                await endRecording();
+            }
+        });
+        holdButton.addEventListener('pointercancel', async () => {
+            if (recording) {
+                await endRecording();
+            }
+        });
+
+        editButton.addEventListener('click', enterEditMode);
+        cancelButton.addEventListener('click', exitEditMode);
+        saveButton.addEventListener('click', async () => {
+            try {
+                await saveEditedTranscript();
+            } catch (error) {
+                console.error('Save transcript failed:', error);
+                setStatus(error.message || 'Failed to save transcript', true);
+            }
+        });
+
+        (async () => {
+            try {
+                await startConsultation();
+                setStatus('Hold the button below and speak.');
+            } catch (error) {
+                setStatus(error.message || 'Failed to initialize consultation', true);
+            }
+        })();
+
+        setTranscript('');
     });
 </script>
 {% endblock %}

@@ -508,10 +508,30 @@ def register_handlers(socketio):
         """Handle WebSocket disconnection"""
         try:
             user_id = session.get('user_id')
+            request_sid = getattr(request, 'sid', None)
             logger.info(f"WebSocket disconnected: user={user_id}")
             
-            # Clean up any active sessions for this connection
-            # Note: This is simplified - in production, you'd need better session tracking
+            # Clean up any active sessions for this socket connection.
+            if request_sid:
+                stale_session_ids = []
+                for existing_id, existing_session in session_manager.get_all_sessions().items():
+                    if existing_session.request_sid == request_sid:
+                        stale_session_ids.append(existing_id)
+
+                for stale_session_id in stale_session_ids:
+                    try:
+                        transcribe_streaming_manager.end_stream(stale_session_id)
+                    except Exception as cleanup_error:
+                        logger.warning(
+                            f"Failed ending stream on disconnect: "
+                            f"session_id={stale_session_id}, error={cleanup_error}"
+                        )
+                    finally:
+                        session_manager.remove_session(stale_session_id)
+                        logger.info(
+                            f"Cleaned session on disconnect: "
+                            f"request_sid={request_sid}, session_id={stale_session_id}"
+                        )
             
         except Exception as e:
             logger.error(f"Disconnect error: {str(e)}")

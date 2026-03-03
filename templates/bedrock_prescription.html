@@ -139,9 +139,30 @@
         alert('Draft saved! (Feature coming soon)');
     }
     
-    function finalizePrescription() {
-        if (confirm('Finalize this prescription? You can still edit it later.')) {
-            alert('Prescription finalized! (Integration with prescription system coming soon)');
+    async function finalizePrescription() {
+        if (!confirm('Finalize this prescription? This will mark consultation as completed.')) {
+            return;
+        }
+
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const consultationId = urlParams.get('consultation_id') || sessionStorage.getItem('consultationId');
+
+            if (consultationId) {
+                const res = await fetch(`/api/v1/consultations/${consultationId}/finalize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to finalize consultation');
+                }
+            }
+
+            alert('Prescription finalized.');
+        } catch (error) {
+            console.error('Finalize failed:', error);
+            alert(`Failed to finalize: ${error.message}`);
         }
     }
     

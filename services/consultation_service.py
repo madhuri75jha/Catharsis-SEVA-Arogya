@@ -15,8 +15,9 @@ class ConsultationService:
         """
         Retrieve recent consultations for a user
         
-        A consultation is defined as a transcription record with an optionally associated prescription.
-        Prescriptions are joined by matching user_id and temporal proximity (within 1 hour).
+        A consultation is defined as a consultation record that can have multiple
+        transcription clips. Prescriptions are joined by matching user_id and
+        temporal proximity (within 1 hour from consultation creation).
         
         Args:
             user_id: ID of the authenticated user
@@ -25,7 +26,7 @@ class ConsultationService:
             
         Returns:
             List of consultation dictionaries with fields:
-                - consultation_id: transcription_id
+                - consultation_id: consultation_id
                 - patient_name: extracted from medical_entities or prescription
                 - patient_initials: generated from patient_name
                 - status: transcription status (COMPLETED, IN_PROGRESS, FAILED)
@@ -37,26 +38,45 @@ class ConsultationService:
         # Validate and cap limit
         limit = max(1, min(limit, 50))
         
-        # SQL query to join transcriptions with prescriptions
+        # SQL query to join consultations with aggregated clip transcript + prescriptions
         query = """
         SELECT 
-            t.transcription_id,
-            t.user_id,
-            t.transcript_text,
-            t.status,
-            t.medical_entities,
-            t.created_at,
+            c.consultation_id,
+            c.user_id,
+            COALESCE(NULLIF(c.merged_transcript_text, ''), clips.merged_transcript, '') AS transcript_text,
+            c.status,
+            clips.medical_entities,
+            c.created_at,
             p.prescription_id,
             p.patient_name,
             p.medications
-        FROM transcriptions t
+        FROM consultations c
+        LEFT JOIN LATERAL (
+            SELECT
+                COALESCE(
+                    STRING_AGG(NULLIF(TRIM(t.transcript_text), ''), ' ' ORDER BY t.clip_order, t.created_at),
+                    ''
+                ) AS merged_transcript,
+                (
+                    SELECT t2.medical_entities
+                    FROM transcriptions t2
+                    WHERE t2.consultation_id = c.consultation_id
+                      AND t2.user_id = c.user_id
+                      AND t2.medical_entities IS NOT NULL
+                    ORDER BY t2.updated_at DESC, t2.created_at DESC
+                    LIMIT 1
+                ) AS medical_entities
+            FROM transcriptions t
+            WHERE t.consultation_id = c.consultation_id
+              AND t.user_id = c.user_id
+        ) clips ON TRUE
         LEFT JOIN prescriptions p ON (
-            t.user_id = p.user_id 
-            AND p.created_at >= t.created_at 
-            AND p.created_at <= t.created_at + INTERVAL '1 hour'
+            c.user_id = p.user_id
+            AND p.created_at >= c.created_at
+            AND p.created_at <= c.created_at + INTERVAL '1 hour'
         )
-        WHERE t.user_id = %s
-        ORDER BY t.created_at DESC
+        WHERE c.user_id = %s
+        ORDER BY c.created_at DESC
         LIMIT %s
         """
         

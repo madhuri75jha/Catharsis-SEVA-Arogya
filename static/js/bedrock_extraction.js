@@ -56,8 +56,9 @@ async function loadHospitalConfig(hospitalId) {
  * Submit transcript for extraction and navigate to prescription form
  * @param {string} transcript - Medical transcript text
  * @param {string} hospitalId - Hospital identifier
+ * @param {object} options - Optional metadata (e.g., consultationId)
  */
-async function submitTranscriptForExtraction(transcript, hospitalId = 'default') {
+async function submitTranscriptForExtraction(transcript, hospitalId = 'default', options = {}) {
     try {
         // Validate transcript
         if (!transcript || transcript.trim().length === 0) {
@@ -77,9 +78,15 @@ async function submitTranscriptForExtraction(transcript, hospitalId = 'default')
         if (result.status === 'success') {
             // Store prescription data in sessionStorage
             sessionStorage.setItem('prescriptionData', JSON.stringify(result.prescription_data));
+            if (options.consultationId) {
+                sessionStorage.setItem('consultationId', options.consultationId);
+            }
             
             // Navigate to prescription form
-            window.location.href = `/bedrock-prescription?hospital_id=${hospitalId}`;
+            const consultationParam = options.consultationId
+                ? `&consultation_id=${encodeURIComponent(options.consultationId)}`
+                : '';
+            window.location.href = `/bedrock-prescription?hospital_id=${hospitalId}${consultationParam}`;
         } else {
             throw new Error(result.error_message || 'Extraction failed');
         }
