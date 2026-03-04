@@ -9,7 +9,8 @@ class Transcription:
     def __init__(self, user_id: str, audio_s3_key: str, job_id: str,
                  transcription_id: Optional[str] = None, transcript_text: Optional[str] = None,
                  status: str = 'PENDING', medical_entities: Optional[List[Dict[str, Any]]] = None,
-                 created_at: Optional[datetime] = None):
+                 created_at: Optional[datetime] = None, consultation_id: Optional[str] = None,
+                 clip_order: int = 1, chunk_sequence: int = 1):
         """
         Initialize Transcription model
         
@@ -22,6 +23,9 @@ class Transcription:
             status: Transcription status (PENDING, IN_PROGRESS, COMPLETED, FAILED)
             medical_entities: Extracted medical entities from Comprehend Medical
             created_at: Creation timestamp (auto-generated if None)
+            consultation_id: Parent consultation identifier for multi-clip sessions
+            clip_order: Order of this clip within the consultation (default: 1)
+            chunk_sequence: Order of this audio chunk within the clip (default: 1)
         """
         self.transcription_id = transcription_id
         self.user_id = user_id
@@ -31,6 +35,9 @@ class Transcription:
         self.status = status
         self.medical_entities = medical_entities or []
         self.created_at = created_at or datetime.utcnow()
+        self.consultation_id = consultation_id
+        self.clip_order = clip_order
+        self.chunk_sequence = chunk_sequence
     
     @staticmethod
     def create_table_sql() -> str:
@@ -216,5 +223,8 @@ class Transcription:
             'transcript_text': self.transcript_text,
             'status': self.status,
             'medical_entities': self.medical_entities,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'consultation_id': self.consultation_id,
+            'clip_order': self.clip_order,
+            'chunk_sequence': self.chunk_sequence
         }

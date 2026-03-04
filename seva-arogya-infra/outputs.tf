@@ -5,7 +5,7 @@ output "alb_dns_name" {
 
 output "api_base_url" {
   description = "Base URL for API access"
-  value       = var.enable_https ? "https://${module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
+  value       = var.enable_https ? "https://${var.acm_domain_name != "" ? var.acm_domain_name : module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
 }
 
 output "acm_certificate_arn" {

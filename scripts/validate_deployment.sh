@@ -229,14 +229,76 @@ echo ""
 print_aws_connectivity_details "$LAST_BODY"
 
 echo ""
+echo "==> Step 3: Bedrock Extraction Flow Test"
+echo "Testing extraction API endpoint with sample transcript..."
+
+# Sample medical transcript for testing
+SAMPLE_TRANSCRIPT='{"transcript": "Patient presents with fever and cough. Prescribed amoxicillin 500mg three times daily for 7 days. Follow up in one week."}'
+
+# Make request to extraction endpoint
+EXTRACT_URL="${API_BASE_URL}/api/v1/extract"
+echo "  Testing: $EXTRACT_URL"
+
+response=$(curl -s -w "\n%{http_code}" -X POST "$EXTRACT_URL" \
+    -H "Content-Type: application/json" \
+    -d "$SAMPLE_TRANSCRIPT" 2>/dev/null || echo -e "\n000")
+
+http_code=$(echo "$response" | tail -n 1)
+body=$(echo "$response" | head -n -1)
+
+LAST_HTTP_CODE="$http_code"
+LAST_BODY="$body"
+
+if [ "$http_code" = "200" ]; then
+  echo "  OK  Extraction API is working (HTTP $http_code)"
+  
+  # Verify response contains prescription data structure
+  if echo "$body" | grep -q "prescription\|medications\|diagnosis"; then
+    echo "  OK  Response contains expected prescription data structure"
+  else
+    echo "  WARN Response may not contain complete prescription data"
+    echo "  Response preview: $(echo "$body" | head -c 200)"
+  fi
+  echo ""
+elif [ "$http_code" = "500" ]; then
+  echo "  FAIL Extraction API returned HTTP 500 (Internal Server Error)"
+  echo "  This may indicate IAM permission issues with Bedrock"
+  echo "  Response: $(echo "$body" | head -c 200)"
+  echo ""
+  echo "FAIL Bedrock extraction flow test failed."
+  echo ""
+  echo "Common causes:"
+  echo "  1. IAM policy missing bedrock-runtime:InvokeModel permission"
+  echo "  2. ECS task role not attached correctly"
+  echo "  3. Bedrock service not available in region"
+  echo "  4. Model ID not accessible or incorrect"
+  echo ""
+  echo "To debug:"
+  echo "  1. Check ECS task logs for AccessDeniedException"
+  echo "  2. Verify IAM policy has bedrock-runtime:InvokeModel action"
+  echo "  3. Confirm ECS task role has the policy attached"
+  exit 1
+else
+  echo "  FAIL Extraction API check failed (HTTP $http_code)"
+  echo "  Response: $(echo "$body" | head -c 200)"
+  echo ""
+  echo "FAIL Bedrock extraction flow test failed."
+  exit 1
+fi
+
+echo ""
 echo "========================================="
 echo "OK Deployment Validation Successful"
 echo "========================================="
 echo ""
 echo "All checks passed! Your deployment is healthy and ready to use."
 echo ""
+echo "Validation Summary:"
+echo "  ✓ Basic health endpoint responding"
+echo "  ✓ AWS connectivity verified"
+echo "  ✓ Bedrock extraction flow working"
+echo ""
 echo "Next steps:"
-
 echo "  - Access the application: $API_BASE_URL"
 echo "  - Test login functionality"
 echo "  - Monitor CloudWatch logs for any issues"

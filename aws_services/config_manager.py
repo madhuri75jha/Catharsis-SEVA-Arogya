@@ -10,6 +10,17 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 
 
+COMPREHEND_MEDICAL_SUPPORTED_REGIONS = {
+    "us-east-1",
+    "us-east-2",
+    "us-west-2",
+    "eu-west-1",
+    "eu-central-1",
+    "ap-southeast-2",
+    "ca-central-1",
+}
+
+
 class ConfigManager:
     """Manages application configuration from environment variables and AWS Secrets Manager"""
     
@@ -33,13 +44,21 @@ class ConfigManager:
                 return maximum
             return parsed
 
+        configured_comprehend_region = os.getenv('AWS_COMPREHEND_REGION', self.region)
+        if configured_comprehend_region not in COMPREHEND_MEDICAL_SUPPORTED_REGIONS:
+            logger.warning(
+                f"AWS_COMPREHEND_REGION '{configured_comprehend_region}' is not in supported "
+                "Comprehend Medical regions. Falling back to 'us-east-1'."
+            )
+            configured_comprehend_region = 'us-east-1'
+
         # Load environment variables
         self.config = {
             'aws_region': self.region,
-            'aws_comprehend_region': os.getenv('AWS_COMPREHEND_REGION', self.region),
+            'aws_comprehend_region': configured_comprehend_region,
             'bedrock_region': os.getenv('BEDROCK_REGION', 'us-east-1'),
-            # Default to Claude 3 Haiku for lower cost while keeping tool/function support.
-            'bedrock_model_id': os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0'),
+            # Default to Amazon Nova Lite to avoid Anthropic account-gating.
+            'bedrock_model_id': os.getenv('BEDROCK_MODEL_ID', 'amazon.nova-lite-v1:0'),
             'cognito_user_pool_id': os.getenv('AWS_COGNITO_USER_POOL_ID'),
             'cognito_client_id': os.getenv('AWS_COGNITO_CLIENT_ID'),
             'cognito_client_secret': os.getenv('AWS_COGNITO_CLIENT_SECRET'),

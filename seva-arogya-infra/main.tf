@@ -344,3 +344,32 @@ resource "aws_vpc_endpoint" "interface" {
   }
 }
 
+
+# Automated ECS Testing
+# Runs extraction pipeline test after ECS deployment to verify IAM policy fix
+resource "null_resource" "ecs_extraction_test" {
+  # Trigger test when ECS service or IAM policy changes
+  triggers = {
+    ecs_service_id = module.ecs.service_id
+    iam_policy_hash = filemd5("${path.module}/iam_policies/bedrock_comprehend_policy.json")
+  }
+
+  provisioner "local-exec" {
+    command     = "bash ${path.module}/scripts/test_ecs_extraction.sh"
+    working_dir = path.module
+    
+    environment = {
+      AWS_REGION   = var.aws_region
+      ALB_DNS      = module.alb.alb_dns_name
+      API_BASE_URL = var.enable_https ? "https://${var.acm_domain_name != "" ? var.acm_domain_name : module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
+      CLUSTER_NAME = module.ecs.cluster_name
+      SERVICE_NAME = module.ecs.service_name
+    }
+  }
+
+  depends_on = [
+    module.ecs,
+    module.alb,
+    module.iam
+  ]
+}

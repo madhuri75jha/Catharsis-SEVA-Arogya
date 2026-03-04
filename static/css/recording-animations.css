@@ -1,0 +1,222 @@
+/**
+ * Recording Visual Feedback Animations
+ * 
+ * Provides pulsing recording icon animation and recording state visual indicators.
+ * 
+ * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6
+ */
+
+/* Pulsing recording icon animation (0.5-1 Hz = 1-2 second cycle) */
+@keyframes recording-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Recording icon base styles */
+.recording-icon {
+    display: inline-block;
+    transition: all 0.1s ease-in-out;
+}
+
+/* Active recording state - pulsing animation */
+.recording-icon.recording {
+    animation: recording-pulse 1.5s ease-in-out infinite;
+    color: #dc3545; /* Red color for recording */
+}
+
+/* Idle state - no animation */
+.recording-icon.idle {
+    animation: none;
+    color: #6c757d; /* Gray color for idle */
+}
+
+/* Recording button pulsing animation */
+@keyframes button-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+    }
+}
+
+/* Recording button base styles */
+.recording-button {
+    position: relative;
+    transition: all 0.1s ease-in-out;
+}
+
+/* Active recording state for button */
+.recording-button.recording {
+    animation: button-pulse 1.5s ease-in-out infinite;
+    background-color: #dc3545 !important;
+    border-color: #dc3545 !important;
+}
+
+/* Background color shift during recording */
+.recording-background {
+    transition: background-color 0.1s ease-in-out;
+}
+
+.recording-background.recording {
+    background-color: rgba(220, 53, 69, 0.05); /* Subtle red tint */
+}
+
+.recording-background.idle {
+    background-color: transparent;
+}
+
+/* Recording indicator badge */
+.recording-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.1s ease-in-out;
+}
+
+.recording-indicator.recording {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.recording-indicator.idle {
+    background-color: rgba(108, 117, 125, 0.1);
+    color: #6c757d;
+    border: 1px solid rgba(108, 117, 125, 0.3);
+}
+
+/* Recording dot animation */
+@keyframes recording-dot-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.recording-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #dc3545;
+}
+
+.recording-dot.recording {
+    animation: recording-dot-pulse 1.5s ease-in-out infinite;
+}
+
+.recording-dot.idle {
+    animation: none;
+    background-color: #6c757d;
+}
+
+/* Microphone icon pulsing */
+.mic-icon {
+    display: inline-block;
+    transition: all 0.1s ease-in-out;
+}
+
+.mic-icon.recording {
+    animation: recording-pulse 1.5s ease-in-out infinite;
+    color: #dc3545;
+}
+
+.mic-icon.idle {
+    animation: none;
+    color: #6c757d;
+}
+
+/* Recording status bar */
+.recording-status-bar {
+    padding: 12px 20px;
+    border-radius: 8px;
+    transition: all 0.1s ease-in-out;
+}
+
+.recording-status-bar.recording {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-left: 4px solid #dc3545;
+}
+
+.recording-status-bar.idle {
+    background-color: rgba(108, 117, 125, 0.05);
+    border-left: 4px solid #6c757d;
+}
+
+/* Ensure animations start within 100ms (requirement 9.6) */
+.recording-icon.recording,
+.recording-button.recording,
+.recording-background.recording,
+.recording-indicator.recording,
+.recording-dot.recording,
+.mic-icon.recording,
+.recording-status-bar.recording {
+    animation-delay: 0ms;
+}
+
+/* Distinct visual states (requirement 9.5) */
+.recording-icon.recording,
+.recording-button.recording,
+.recording-indicator.recording,
+.mic-icon.recording {
+    /* High contrast red for recording state */
+    filter: brightness(1.1);
+}
+
+.recording-icon.idle,
+.recording-button.idle,
+.recording-indicator.idle,
+.mic-icon.idle {
+    /* Muted gray for idle state */
+    filter: brightness(0.9);
+}
+
+/* Accessibility: Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    .recording-icon.recording,
+    .recording-button.recording,
+    .recording-dot.recording,
+    .mic-icon.recording {
+        animation: none;
+    }
+    
+    /* Use static indicator instead */
+    .recording-icon.recording,
+    .mic-icon.recording {
+        color: #dc3545;
+        font-weight: bold;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .recording-indicator {
+        font-size: 12px;
+        padding: 4px 10px;
+    }
+    
+    .recording-dot {
+        width: 6px;
+        height: 6px;
+    }
+}

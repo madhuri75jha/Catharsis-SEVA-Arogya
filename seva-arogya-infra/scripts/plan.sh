@@ -27,7 +27,7 @@ terraform plan \
   -var="aws_region=${AWS_REGION:-us-east-1}" \
   -var="comprehend_region=${AWS_COMPREHEND_REGION:-us-east-1}" \
   -var="bedrock_region=${BEDROCK_REGION:-us-east-1}" \
-  -var="bedrock_model_id=${BEDROCK_MODEL_ID:-anthropic.claude-3-haiku-20240307-v1:0}" \
+  -var="bedrock_model_id=${BEDROCK_MODEL_ID:-amazon.nova-lite-v1:0}" \
   -var="stream_idle_timeout_seconds=${STREAM_IDLE_TIMEOUT_SECONDS:-900}" \
   -var="project_name=${PROJECT_NAME:-seva-arogya}" \
   -var="env_name=${ENV_NAME:-dev}" \

@@ -1,0 +1,102 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Fault Condition** - Bedrock Model Invocation Authorization Failure
+  - **CRITICAL**: This test MUST FAIL on unfixed infrastructure - failure confirms the IAM namespace bug exists
+  - **DO NOT attempt to fix the test or the IAM policy when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the IAM namespace mismatch prevents Bedrock invocation
+  - **Scoped PBT Approach**: Scope the property to concrete failing cases - Bedrock model invocation attempts with the unfixed IAM policy
+  - Test that Bedrock model invocation fails with AccessDeniedException when IAM policy uses `bedrock:` namespace instead of `bedrock-runtime:`
+  - Test implementation details from Fault Condition: `isBugCondition(input)` where `input.operation IN ['InvokeModel', 'InvokeModelWithResponseStream']` AND `input.client_type == 'bedrock-runtime'` AND policy grants `bedrock:` but NOT `bedrock-runtime:` permissions
+  - The test assertions should match Expected Behavior: successful authorization with `bedrock-runtime:InvokeModel` permission
+  - Test cases:
+    - Direct model invocation: Call `bedrock_client.generate_prescription_data()` with sample transcript
+    - API endpoint test: POST to `/api/v1/extract` with transcript data
+    - Streaming invocation: Attempt `invoke_model_with_response_stream()`
+    - IAM Policy Simulator: Test `bedrock-runtime:InvokeModel` action against current policy
+  - Run test on UNFIXED infrastructure (current ECS deployment with incorrect IAM policy)
+  - **EXPECTED OUTCOME**: Test FAILS with AccessDeniedException (this is correct - it proves the bug exists)
+  - Document counterexamples found: AccessDeniedException messages, 500 API errors, IAM simulator denials
+  - Mark task complete when test is written, run against unfixed infrastructure, and failures are documented
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Non-Bedrock Operations and Existing Permissions
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED infrastructure for non-Bedrock operations
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements
+  - Property-based testing generates many test cases for stronger guarantees that authorization behavior is unchanged
+  - Test cases to observe and capture:
+    - Comprehend Medical operations: Verify `detect_entities_v2()` works correctly
+    - Resource restrictions: Verify only Claude 3 models accessible, others denied
+    - Transcription processing: Verify transcription generation unchanged
+    - Retry logic: Verify exponential backoff behavior for rate limits
+    - Non-Bedrock AWS operations: Verify other service calls work correctly
+  - Run tests on UNFIXED infrastructure
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run on unfixed infrastructure, and passing
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+- [x] 3. Fix IAM policy namespace and add ECS testing
+
+  - [x] 3.1 Correct IAM policy namespace in bedrock_comprehend_policy.json
+    - Replace `bedrock:InvokeModel` with `bedrock-runtime:InvokeModel`
+    - Replace `bedrock:InvokeModelWithResponseStream` with `bedrock-runtime:InvokeModelWithResponseStream`
+    - Preserve all `comprehendmedical:*` actions unchanged
+    - Preserve all Bedrock model resource ARN restrictions (Claude 3 models only)
+    - Validate JSON syntax after changes
+    - _Bug_Condition: isBugCondition(input) where input.operation IN ['InvokeModel', 'InvokeModelWithResponseStream'] AND input.client_type == 'bedrock-runtime' AND policy grants 'bedrock:' but NOT 'bedrock-runtime:' permissions_
+    - _Expected_Behavior: IAM policy grants bedrock-runtime:InvokeModel and bedrock-runtime:InvokeModelWithResponseStream permissions, allowing successful model invocation without AccessDeniedException_
+    - _Preservation: Comprehend Medical permissions, Bedrock model resource restrictions, streaming capability, retry logic, and transcription functionality remain unchanged_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+  - [x] 3.2 Add automated ECS testing to Terraform deployment
+    - Add `null_resource` with `local-exec` provisioner to run tests after ECS deployment
+    - Create test script that waits for ECS service stability
+    - Script invokes extraction API with sample transcript
+    - Script verifies 200 response and valid prescription data structure
+    - Script fails Terraform apply if test fails
+    - Add dependency on ECS service and task definition resources
+    - _Requirements: 2.5_
+
+  - [-] 3.3 Deploy IAM policy changes to ECS
+    - Apply Terraform changes to update ECS task role with corrected IAM policy
+    - Wait for ECS service to stabilize with new task definition
+    - Verify new tasks are running with updated IAM policy
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+
+  - [ ] 3.4 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Bedrock Model Invocation Authorization Success
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior (successful Bedrock invocation)
+    - When this test passes, it confirms the IAM namespace fix works correctly
+    - Run bug condition exploration test from step 1 against FIXED infrastructure
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify all test cases now succeed:
+      - Direct model invocation returns prescription data
+      - API endpoint returns 200 with valid response
+      - Streaming invocation works correctly
+      - IAM Policy Simulator shows "allowed" for bedrock-runtime:InvokeModel
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+
+  - [ ] 3.5 Verify preservation tests still pass
+    - **Property 2: Preservation** - Non-Bedrock Operations Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2 against FIXED infrastructure
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all preservation test cases still pass:
+      - Comprehend Medical operations work identically
+      - Resource restrictions unchanged (only Claude 3 accessible)
+      - Transcription processing unchanged
+      - Retry logic behavior unchanged
+      - Non-Bedrock AWS operations work identically
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Run full test suite against fixed infrastructure
+  - Verify bug condition test passes (Bedrock invocation works)
+  - Verify preservation tests pass (no regressions)
+  - Verify automated ECS testing executes successfully in Terraform
+  - Test end-to-end extraction flow: transcript → Bedrock → prescription data
+  - Ensure all tests pass, ask the user if questions arise

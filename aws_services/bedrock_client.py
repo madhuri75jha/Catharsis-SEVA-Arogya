@@ -58,12 +58,15 @@ class BedrockClient(BaseAWSClient):
                 "BEDROCK_MODEL_ID is not configured. Set BEDROCK_MODEL_ID in environment/secrets."
             )
 
-        # Models known to support function calling (Claude 3 family)
+        # Models known to support tool/function calling in this code path.
         supported_models = [
             'anthropic.claude-3-sonnet',
             'anthropic.claude-3-opus',
             'anthropic.claude-3-haiku',
             'anthropic.claude-3-5-sonnet',
+            'amazon.nova-lite',
+            'amazon.nova-pro',
+            'amazon.nova-micro',
         ]
         
         model_supports_functions = any(
@@ -73,12 +76,93 @@ class BedrockClient(BaseAWSClient):
         if not model_supports_functions:
             error_msg = (
                 f"Model '{self.model_id}' does not support function calling. "
-                f"Please use a Claude 3 family model."
+                f"Please use a supported Claude 3/3.5 or Amazon Nova model."
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
         
         logger.info(f"Model '{self.model_id}' supports function calling")
+
+    def _is_anthropic_model(self) -> bool:
+        """Return True if configured model is Anthropic Claude."""
+        return self.model_id.startswith("anthropic.")
+
+    def _invoke_with_tools(self, prompt: str, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Invoke model with tool definitions.
+        Uses InvokeModel for Anthropic and Converse API for Amazon Nova.
+        """
+        if self._is_anthropic_model():
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 4096,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "tools": tools
+            }
+            response = self._call_with_retry(
+                lambda: self.client.invoke_model(
+                    modelId=self.model_id,
+                    body=json.dumps(request_body)
+                )
+            )
+            return json.loads(response['body'].read())
+
+        converse_tools = []
+        for tool in tools:
+            converse_tools.append({
+                "toolSpec": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "inputSchema": {
+                        "json": tool["input_schema"]
+                    }
+                }
+            })
+
+        response = self._call_with_retry(
+            lambda: self.client.converse(
+                modelId=self.model_id,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [{"text": prompt}]
+                    }
+                ],
+                inferenceConfig={"maxTokens": 4096},
+                toolConfig={"tools": converse_tools}
+            )
+        )
+        return response
+
+    def _extract_function_calls(self, response_body: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize tool/function calls from InvokeModel/Converse responses."""
+        function_calls: Dict[str, Any] = {}
+
+        if self._is_anthropic_model():
+            for content_block in response_body.get('content', []):
+                if content_block.get('type') == 'tool_use':
+                    function_name = content_block.get('name')
+                    function_input = content_block.get('input', {})
+                    if function_name:
+                        function_calls[function_name] = function_input
+            return function_calls
+
+        output_message = response_body.get("output", {}).get("message", {})
+        for content_block in output_message.get("content", []):
+            tool_use = content_block.get("toolUse")
+            if not tool_use:
+                continue
+            function_name = tool_use.get("name")
+            function_input = tool_use.get("input", {})
+            if function_name:
+                function_calls[function_name] = function_input
+
+        return function_calls
     
     def _call_with_retry(self, operation_func, *args, **kwargs):
         """
@@ -323,39 +407,8 @@ Please extract the prescription information from this transcript and fill in the
                 }
                 tools.append(tool)
             
-            # Prepare request body for Claude 3
-            request_body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 4096,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "tools": tools
-            }
-            
-            # Call Bedrock with retry logic
-            def _invoke_model():
-                return self.client.invoke_model(
-                    modelId=self.model_id,
-                    body=json.dumps(request_body)
-                )
-            
-            response = self._call_with_retry(_invoke_model)
-            
-            # Parse response
-            response_body = json.loads(response['body'].read())
-            
-            # Extract function calls from response
-            function_calls = {}
-            if 'content' in response_body:
-                for content_block in response_body['content']:
-                    if content_block.get('type') == 'tool_use':
-                        function_name = content_block.get('name')
-                        function_input = content_block.get('input', {})
-                        function_calls[function_name] = function_input
+            response_body = self._invoke_with_tools(prompt, tools)
+            function_calls = self._extract_function_calls(response_body)
             
             duration_ms = (time.time() - start_time) * 1000
             self._log_success('generate_prescription_data', 

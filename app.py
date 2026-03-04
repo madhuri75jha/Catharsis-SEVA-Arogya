@@ -25,6 +25,8 @@ from aws_services.transcribe_manager import TranscribeManager
 from aws_services.comprehend_manager import ComprehendManager
 from aws_services.database_manager import DatabaseManager
 from aws_services.connectivity_checker import AWSConnectivityChecker
+from aws_services.transcription_queue_manager import TranscriptionQueueManager
+from aws_services.consultation_session_manager import ConsultationSessionManager
 
 # Import models
 from models.prescription import Prescription
@@ -50,11 +52,13 @@ storage_manager = None
 transcribe_manager = None
 comprehend_manager = None
 database_manager = None
+transcription_queue_manager = None
+consultation_session_manager = None
 
 
 def init_app():
     """Initialize application with AWS services"""
-    global config_manager, auth_manager, storage_manager, transcribe_manager, comprehend_manager, database_manager, socketio
+    global config_manager, auth_manager, storage_manager, transcribe_manager, comprehend_manager, database_manager, socketio, transcription_queue_manager, consultation_session_manager
     
     try:
         # Setup logging
@@ -123,8 +127,10 @@ def init_app():
         # Transcribe Manager
         transcribe_manager = TranscribeManager(region=region)
         
-        # Comprehend Manager
-        comprehend_manager = ComprehendManager(region=region)
+        # Comprehend Medical is not available in all AWS regions.
+        # Use dedicated comprehend region config instead of generic AWS_REGION.
+        comprehend_region = config_manager.get('aws_comprehend_region', region)
+        comprehend_manager = ComprehendManager(region=comprehend_region)
         
         # Database Manager
         db_credentials = config_manager.get_database_credentials()
@@ -183,6 +189,36 @@ def init_app():
         else:
             logger.error("Database credentials not available")
             raise Exception("Database configuration failed")
+        
+        # Initialize Transcription Queue Manager
+        max_concurrent_jobs = config_manager.get('max_concurrent_transcription_jobs', 10)
+        max_retries = config_manager.get('transcription_max_retries', 3)
+        transcription_queue_manager = TranscriptionQueueManager(
+            max_concurrent_jobs=max_concurrent_jobs,
+            max_retries=max_retries
+        )
+        logger.info(f"Transcription Queue Manager initialized: max_concurrent={max_concurrent_jobs}, max_retries={max_retries}")
+        
+        # Initialize Consultation Session Manager
+        consultation_session_manager = ConsultationSessionManager(database_manager)
+        logger.info("Consultation Session Manager initialized")
+        
+        # Start background cleanup task for job metadata
+        def cleanup_job_metadata():
+            """Background task to clean up old job metadata every hour"""
+            while True:
+                try:
+                    eventlet.sleep(3600)  # Sleep for 1 hour
+                    if transcription_queue_manager:
+                        removed_count = transcription_queue_manager.cleanup_old_metadata(max_age_seconds=86400)
+                        if removed_count > 0:
+                            logger.info(f"Cleaned up {removed_count} old job metadata entries")
+                except Exception as e:
+                    logger.error(f"Error in cleanup task: {str(e)}")
+        
+        # Start cleanup task in background
+        eventlet.spawn(cleanup_job_metadata)
+        logger.info("Background cleanup task started")
         
         # Initialize SocketIO handlers
         from socketio_handlers import init_socketio_handlers
