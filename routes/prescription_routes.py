@@ -18,9 +18,14 @@ bedrock_client = None
 database_manager = None
 
 
-def init_prescription_routes(presc_service, rbac_svc, pdf_gen, bedrock, db_manager):
+def init_prescription_routes(presc_service, rbac_svc, pdf_gen, bedrock=None, db_manager=None):
     """Initialize prescription routes with service instances"""
     global prescription_service, rbac_service, pdf_generator, bedrock_client, database_manager
+    # Backward compatibility: older callers pass 4 args with db_manager as 4th param.
+    if db_manager is None and bedrock is not None and hasattr(bedrock, 'execute_with_retry'):
+        db_manager = bedrock
+        bedrock = None
+
     prescription_service = presc_service
     rbac_service = rbac_svc
     pdf_generator = pdf_gen

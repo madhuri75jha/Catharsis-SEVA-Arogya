@@ -105,15 +105,32 @@ echo ""
 echo "==> Docker build/tag/push"
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_URL"
 docker build -t seva-arogya-backend "$ROOT_DIR"
-docker tag seva-arogya-backend:latest "$ECR_URL:latest"
-docker push "$ECR_URL:latest"
+
+if command -v git >/dev/null 2>&1; then
+  GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+else
+  GIT_SHA=""
+fi
+
+if [ -n "${GIT_SHA:-}" ]; then
+  DEFAULT_DEPLOY_IMAGE_TAG="$(date -u +%Y%m%d%H%M%S)-${GIT_SHA}"
+else
+  DEFAULT_DEPLOY_IMAGE_TAG="$(date -u +%Y%m%d%H%M%S)"
+fi
+
+DEPLOY_IMAGE_TAG="${DEPLOY_IMAGE_TAG:-$DEFAULT_DEPLOY_IMAGE_TAG}"
+DEPLOY_IMAGE_URI="${ECR_URL}:${DEPLOY_IMAGE_TAG}"
+
+echo "Using image tag: ${DEPLOY_IMAGE_TAG}"
+docker tag seva-arogya-backend:latest "$DEPLOY_IMAGE_URI"
+docker push "$DEPLOY_IMAGE_URI"
 
 echo ""
 echo "==> Terraform apply (update ECS task definition)"
 pushd "$INFRA_DIR" >/dev/null
 terraform apply \
   "${terraform_vars[@]}" \
-  -var="container_image=${ECR_URL}:latest" \
+  -var="container_image=${DEPLOY_IMAGE_URI}" \
   -auto-approve
 popd >/dev/null
 
@@ -126,14 +143,64 @@ aws ecs update-service \
   --region "$AWS_REGION" >/dev/null
 
 echo "==> Waiting for ECS service to become stable"
-aws ecs wait services-stable \
-  --cluster "$CLUSTER_NAME" \
-  --services "$SERVICE_NAME" \
-  --region "$AWS_REGION"
+ECS_STABLE_TIMEOUT_SECONDS="${ECS_STABLE_TIMEOUT_SECONDS:-900}"
+ECS_WAIT_POLL_SECONDS="${ECS_WAIT_POLL_SECONDS:-15}"
+WAIT_DEADLINE=$(( $(date +%s) + ECS_STABLE_TIMEOUT_SECONDS ))
+LAST_EVENT=""
+
+while true; do
+  IS_STABLE="$(aws ecs describe-services \
+    --cluster "$CLUSTER_NAME" \
+    --services "$SERVICE_NAME" \
+    --region "$AWS_REGION" \
+    --query 'length(services[0].deployments)==`1` && services[0].runningCount==services[0].desiredCount' \
+    --output text)"
+
+  COUNTS="$(aws ecs describe-services \
+    --cluster "$CLUSTER_NAME" \
+    --services "$SERVICE_NAME" \
+    --region "$AWS_REGION" \
+    --query 'services[0].[desiredCount,runningCount,pendingCount]' \
+    --output text)"
+  DESIRED_COUNT="$(echo "$COUNTS" | awk '{print $1}')"
+  RUNNING_COUNT="$(echo "$COUNTS" | awk '{print $2}')"
+  PENDING_COUNT="$(echo "$COUNTS" | awk '{print $3}')"
+  echo "ECS status: desired=${DESIRED_COUNT} running=${RUNNING_COUNT} pending=${PENDING_COUNT}"
+
+  LATEST_EVENT="$(aws ecs describe-services \
+    --cluster "$CLUSTER_NAME" \
+    --services "$SERVICE_NAME" \
+    --region "$AWS_REGION" \
+    --query 'services[0].events[0].message' \
+    --output text 2>/dev/null || true)"
+  if [ -n "$LATEST_EVENT" ] && [ "$LATEST_EVENT" != "None" ] && [ "$LATEST_EVENT" != "$LAST_EVENT" ]; then
+    echo "Latest ECS event: $LATEST_EVENT"
+    LAST_EVENT="$LATEST_EVENT"
+  fi
+
+  if [ "$IS_STABLE" = "True" ]; then
+    break
+  fi
+
+  if [ "$(date +%s)" -ge "$WAIT_DEADLINE" ]; then
+    echo "Error: ECS service did not stabilize within ${ECS_STABLE_TIMEOUT_SECONDS}s"
+    echo "Recent ECS events:"
+    aws ecs describe-services \
+      --cluster "$CLUSTER_NAME" \
+      --services "$SERVICE_NAME" \
+      --region "$AWS_REGION" \
+      --query 'services[0].events[0:10].[createdAt,message]' \
+      --output table || true
+    exit 1
+  fi
+
+  sleep "$ECS_WAIT_POLL_SECONDS"
+done
 
 echo ""
 echo "Deployment complete."
 echo "API Base URL: $ALB_URL"
+echo "Liveness check: ${ALB_URL}/health/live"
 echo "Health check: ${ALB_URL}/health"
 
 echo ""

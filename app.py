@@ -245,7 +245,7 @@ def init_app():
         # Initialize services
         prescription_service = PrescriptionService(database_manager)
         rbac_service = RBACService(database_manager)
-        pdf_generator = PDFGenerator(storage_manager, database_manager)
+        pdf_generator = PDFGenerator(storage_manager)
         
         # Initialize CloudWatch service if configured
         cloudwatch_log_group = os.getenv('CLOUDWATCH_LOG_GROUP_NAME')
