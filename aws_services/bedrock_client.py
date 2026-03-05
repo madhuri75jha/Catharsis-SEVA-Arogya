@@ -442,3 +442,113 @@ Please extract the prescription information from this transcript and fill in the
         except Exception as e:
             logger.error(f"Unexpected error generating prescription data: {str(e)}")
             raise
+    
+    def extract_prescription_sections(self, transcript: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract prescription sections from transcript for prescription workflow
+        
+        Args:
+            transcript: Medical consultation transcript
+            
+        Returns:
+            Dictionary with section keys and content, or None on error
+        """
+        start_time = time.time()
+        
+        try:
+            self._log_operation('extract_prescription_sections', 
+                              transcript_length=len(transcript))
+            
+            # Build simplified prompt for section extraction
+            prompt = f"""You are a medical AI assistant. Extract structured prescription information from the following consultation transcript.
+
+Medical Consultation Transcript:
+{transcript}
+
+Extract the following sections:
+1. Diagnosis: Primary and secondary diagnoses
+2. Medications: List of medications with dosage, frequency, and duration
+3. Instructions: Patient care instructions and precautions
+4. Follow-up: Follow-up appointment recommendations
+5. Lab Tests: Recommended laboratory tests (if any)
+6. Referrals: Specialist referrals (if any)
+
+Return the data in JSON format with keys matching the section names. If a section is not mentioned, use an empty string or null."""
+            
+            # Define function for extraction
+            tools = [{
+                "name": "extract_prescription_sections",
+                "description": "Extract prescription sections from medical transcript",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "diagnosis": {
+                            "type": "string",
+                            "description": "Primary and secondary diagnoses"
+                        },
+                        "medications": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Medication name"},
+                                    "dosage": {"type": "string", "description": "Dosage amount"},
+                                    "frequency": {"type": "string", "description": "How often to take"},
+                                    "duration": {"type": "string", "description": "How long to take"}
+                                },
+                                "required": ["name", "dosage", "frequency"]
+                            },
+                            "description": "List of prescribed medications"
+                        },
+                        "instructions": {
+                            "type": "string",
+                            "description": "Patient care instructions and precautions"
+                        },
+                        "follow_up": {
+                            "type": "string",
+                            "description": "Follow-up appointment recommendations"
+                        },
+                        "lab_tests": {
+                            "type": "string",
+                            "description": "Recommended laboratory tests"
+                        },
+                        "referrals": {
+                            "type": "string",
+                            "description": "Specialist referrals"
+                        }
+                    },
+                    "required": ["diagnosis", "medications", "instructions"]
+                }
+            }]
+            
+            response_body = self._invoke_with_tools(prompt, tools)
+            function_calls = self._extract_function_calls(response_body)
+            
+            duration_ms = (time.time() - start_time) * 1000
+            self._log_success('extract_prescription_sections', 
+                            duration_ms=duration_ms)
+            
+            # Extract the function call result
+            if 'extract_prescription_sections' in function_calls:
+                sections = function_calls['extract_prescription_sections']
+                logger.info(f"Extracted prescription sections: {list(sections.keys())}")
+                return sections
+            else:
+                logger.warning("No prescription sections extracted from Bedrock response")
+                return None
+            
+        except (BedrockUnavailableError, BedrockRateLimitError) as e:
+            self._log_error('extract_prescription_sections', e)
+            logger.error(f"Bedrock error: {str(e)}")
+            raise
+            
+        except ClientError as e:
+            self._log_error('extract_prescription_sections', e)
+            error_code = e.response['Error']['Code']
+            request_id = e.response.get('ResponseMetadata', {}).get('RequestId', 'unknown')
+            logger.error(f"Failed to extract prescription sections: {error_code}. Request ID: {request_id}")
+            raise
+            
+        except Exception as e:
+            logger.error(f"Unexpected error extracting prescription sections: {str(e)}")
+            raise

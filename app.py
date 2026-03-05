@@ -203,6 +203,16 @@ def init_app():
         consultation_session_manager = ConsultationSessionManager(database_manager)
         logger.info("Consultation Session Manager initialized")
         
+        # Initialize Cleanup Scheduler for prescription soft delete
+        cleanup_enabled = os.getenv('CLEANUP_SCHEDULE_ENABLED', 'true').lower() == 'true'
+        if cleanup_enabled:
+            from services.cleanup_scheduler import CleanupScheduler
+            cleanup_scheduler = CleanupScheduler(database_manager, storage_manager)
+            cleanup_scheduler.start()
+            logger.info("Cleanup Scheduler initialized and started")
+        else:
+            logger.info("Cleanup Scheduler disabled by configuration")
+        
         # Start background cleanup task for job metadata
         def cleanup_job_metadata():
             """Background task to clean up old job metadata every hour"""
@@ -223,6 +233,36 @@ def init_app():
         # Initialize SocketIO handlers
         from socketio_handlers import init_socketio_handlers
         init_socketio_handlers(socketio, database_manager, storage_manager, config_manager)
+        
+        # Register prescription and hospital management blueprints
+        from routes.prescription_routes import prescription_bp, init_prescription_routes
+        from routes.hospital_routes import hospital_bp, init_hospital_routes
+        from services.prescription_service import PrescriptionService
+        from services.rbac_service import RBACService
+        from services.pdf_generator import PDFGenerator
+        from services.cloudwatch_service import CloudWatchService
+        
+        # Initialize services
+        prescription_service = PrescriptionService(database_manager)
+        rbac_service = RBACService(database_manager)
+        pdf_generator = PDFGenerator(storage_manager, database_manager)
+        
+        # Initialize CloudWatch service if configured
+        cloudwatch_log_group = os.getenv('CLOUDWATCH_LOG_GROUP_NAME')
+        cloudwatch_region = os.getenv('AWS_CLOUDWATCH_REGION', region)
+        cloudwatch_service = None
+        if cloudwatch_log_group:
+            cloudwatch_service = CloudWatchService(cloudwatch_log_group, cloudwatch_region)
+            logger.info(f"CloudWatch service initialized: log_group={cloudwatch_log_group}")
+        
+        # Initialize route blueprints with services
+        init_prescription_routes(prescription_service, rbac_service, pdf_generator, database_manager)
+        init_hospital_routes(rbac_service, database_manager, cloudwatch_service)
+        
+        # Register blueprints
+        app.register_blueprint(prescription_bp)
+        app.register_blueprint(hospital_bp)
+        logger.info("Prescription and hospital management routes registered")
         
         logger.info("Application initialized successfully")
         
@@ -406,6 +446,55 @@ def final_prescription():
 def bedrock_prescription():
     """AI-assisted prescription page with Bedrock extraction"""
     return render_template('bedrock_prescription.html')
+
+
+@app.route('/prescriptions')
+@login_required
+def prescriptions_list():
+    """Prescriptions list page"""
+    return render_template('prescriptions_list.html')
+
+
+@app.route('/prescriptions/<prescription_id>')
+@login_required
+def prescription_detail(prescription_id):
+    """Single prescription detail page"""
+    return render_template('prescription_detail.html', prescription_id=prescription_id)
+
+
+@app.route('/prescriptions/<prescription_id>/finalize')
+@login_required
+def prescription_finalize(prescription_id):
+    """Prescription finalization page"""
+    return render_template('prescription_finalize.html', prescription_id=prescription_id)
+
+
+@app.route('/thank-you')
+@login_required
+def thank_you_page():
+    """Thank you page after prescription finalization"""
+    return render_template('thank_you.html')
+
+
+@app.route('/profile')
+@login_required
+def profile_page():
+    """User profile page"""
+    return render_template('profile.html')
+
+
+@app.route('/hospital-settings')
+@login_required
+def hospital_settings_page():
+    """Hospital settings page"""
+    return render_template('hospital_settings.html')
+
+
+@app.route('/logs')
+@login_required
+def logs_viewer_page():
+    """CloudWatch logs viewer page (DeveloperAdmin only)"""
+    return render_template('logs_viewer.html')
 
 
 @app.route('/consultation/<consultation_id>')
@@ -722,14 +811,30 @@ def api_login():
             session['id_token'] = tokens['id_token']
             session['refresh_token'] = tokens['refresh_token']
             
-            # Get user info
+            # Get user info and sync role from Cognito
             user_info = auth_manager.validate_token(tokens['access_token'])
             if user_info:
                 session['user_name'] = user_info['attributes'].get('name', email.split('@')[0].title())
+                
+                # Sync user role from Cognito to database
+                from utils.auth_helpers import sync_user_role_from_cognito
+                user_role = sync_user_role_from_cognito(database_manager, user_info, email)
+                
+                if user_role:
+                    session['user_role'] = user_role
+                    # Also store hospital_id if present
+                    hospital_id = user_info['attributes'].get('custom:hospital_id')
+                    if hospital_id:
+                        session['hospital_id'] = hospital_id
+                else:
+                    # Fallback to Doctor role if sync fails
+                    session['user_role'] = 'Doctor'
+                    logger.warning(f"Role sync failed for {email}, defaulting to Doctor")
             else:
                 session['user_name'] = email.split('@')[0].title()
+                session['user_role'] = 'Doctor'  # Default role
             
-            logger.info(f"User logged in successfully: {email}")
+            logger.info(f"User logged in successfully: {email} (role: {session.get('user_role')})")
             return jsonify({'success': True, 'message': 'Login successful'})
         else:
             logger.warning(f"Login failed for user: {email}")

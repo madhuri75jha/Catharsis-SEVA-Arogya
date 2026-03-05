@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}SEVA Arogya - Success{% endblock %}
+
+{% block content %}
+<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+    <!-- Success Content -->
+    <div class="flex-1 flex flex-col items-center justify-center px-8 text-center">
+        <!-- Success Icon -->
+        <div class="relative mb-8">
+            <div class="absolute inset-0 bg-green-500/10 rounded-full scale-150 blur-2xl"></div>
+            <div class="absolute inset-0 bg-green-500/5 rounded-full scale-110"></div>
+            <div class="relative z-10 flex size-32 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl shadow-green-500/40">
+                <span class="material-symbols-outlined text-[72px] font-light">check_circle</span>
+            </div>
+        </div>
+        
+        <!-- Success Message -->
+        <h1 class="text-2xl font-bold text-slate-800 dark:text-white mb-3">
+            Prescription Finalized!
+        </h1>
+        
+        <p id="success-message" class="text-slate-600 dark:text-slate-400 text-base mb-8">
+            Great work! Your prescription is ready.
+        </p>
+        
+        <!-- Action Buttons -->
+        <div class="w-full space-y-3">
+            <button 
+                onclick="window.location.href='/prescriptions'"
+                class="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+            >
+                <span class="material-symbols-outlined text-[20px]">list</span>
+                <span>View All Prescriptions</span>
+            </button>
+            
+            <button 
+                onclick="window.location.href='/home'"
+                class="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+            >
+                <span class="material-symbols-outlined text-[20px]">home</span>
+                <span>Back to Home</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Bottom Navigation Bar -->
+    <div class="pb-4 flex justify-center">
+        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Fetch random success message from API
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const response = await fetch('/api/v1/thank-you');
+            const data = await response.json();
+            
+            if (data.success && data.message) {
+                const messageEl = document.getElementById('success-message');
+                if (messageEl) {
+                    messageEl.textContent = data.message;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching thank you message:', error);
+            // Keep default message if fetch fails
+        }
+    });
+</script>
+{% endblock %}

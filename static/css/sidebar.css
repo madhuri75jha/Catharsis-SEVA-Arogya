@@ -1,0 +1,143 @@
+/* Sidebar Styles */
+
+/* Scrollbar styling for sidebar menu */
+#sidebar-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+#sidebar-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#sidebar-menu::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 3px;
+}
+
+#sidebar-menu::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5);
+}
+
+/* Dark mode scrollbar */
+.dark #sidebar-menu::-webkit-scrollbar-thumb {
+    background: rgba(71, 85, 105, 0.5);
+}
+
+.dark #sidebar-menu::-webkit-scrollbar-thumb:hover {
+    background: rgba(71, 85, 105, 0.7);
+}
+
+/* Sidebar overlay animation */
+#sidebar-overlay {
+    opacity: 0;
+    transition: opacity 300ms ease-in-out;
+}
+
+#sidebar-overlay:not(.hidden) {
+    opacity: 1;
+}
+
+/* Sidebar transition */
+#sidebar {
+    transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Mobile: Sidebar drawer */
+@media (max-width: 767px) {
+    #sidebar {
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Adjust main content when sidebar is open */
+    body.sidebar-open {
+        overflow: hidden;
+    }
+}
+
+/* Desktop: Fixed sidebar */
+@media (min-width: 768px) {
+    #sidebar {
+        position: fixed;
+        transform: translateX(0) !important;
+    }
+    
+    /* Hide mobile toggle button */
+    #sidebar-toggle {
+        display: none;
+    }
+    
+    /* Hide overlay on desktop */
+    #sidebar-overlay {
+        display: none !important;
+    }
+    
+    /* Adjust main content to account for sidebar */
+    body {
+        padding-left: 256px; /* 16rem = 256px */
+    }
+}
+
+/* Smooth transitions for menu items */
+#sidebar-menu a {
+    transition: all 200ms ease-in-out;
+}
+
+/* Active menu item indicator */
+#sidebar-menu a.active {
+    position: relative;
+}
+
+#sidebar-menu a.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 60%;
+    background-color: var(--primary, #127ae2);
+    border-radius: 0 2px 2px 0;
+}
+
+/* Profile section hover effect */
+#sidebar-profile > div {
+    transition: all 200ms ease-in-out;
+}
+
+#sidebar-profile > div:hover {
+    transform: translateX(2px);
+}
+
+/* Material Symbols icon alignment */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Responsive adjustments */
+@media (max-width: 767px) {
+    /* Ensure sidebar is above other content */
+    #sidebar {
+        z-index: 50;
+    }
+    
+    #sidebar-overlay {
+        z-index: 40;
+    }
+    
+    #sidebar-toggle {
+        z-index: 30;
+    }
+}
+
+/* Animation for sidebar toggle button */
+#sidebar-toggle {
+    transition: transform 200ms ease-in-out, box-shadow 200ms ease-in-out;
+}
+
+#sidebar-toggle:active {
+    transform: scale(0.95);
+}
+
+#sidebar-toggle:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}

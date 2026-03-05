@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}SEVA Arogya - Prescription Details{% endblock %}
+
+{% block content %}
+<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+    <!-- Header -->
+    <div class="px-6 pt-12 pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center justify-between">
+            <button onclick="window.location.href='/prescriptions'" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold text-slate-800 dark:text-white">Prescription</h1>
+            <div class="w-10"></div>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loading-state" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p class="mt-2 text-sm text-slate-500">Loading prescription...</p>
+        </div>
+    </div>
+    
+    <!-- Error State -->
+    <div id="error-state" class="hidden flex-1 flex items-center justify-center">
+        <div class="text-center px-6">
+            <span class="material-symbols-outlined text-[64px] text-red-300 dark:text-red-700">error</span>
+            <p id="error-message" class="mt-2 text-sm text-red-500">Failed to load prescription</p>
+            <button onclick="window.location.reload()" class="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm">Retry</button>
+        </div>
+    </div>
+    
+    <!-- Prescription Content -->
+    <div id="prescription-content" class="hidden flex-1 overflow-y-auto">
+        <!-- Patient Info -->
+        <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900/50">
+            <div class="flex items-center gap-3">
+                <div class="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span id="patient-initials" class="text-lg font-semibold text-primary">?</span>
+                </div>
+                <div class="flex-1">
+                    <h2 id="patient-name" class="text-lg font-semibold text-slate-800 dark:text-white">Loading...</h2>
+                    <p id="prescription-id" class="text-xs text-slate-500">#...</p>
+                </div>
+                <span id="state-badge" class="state-badge state-draft">Draft</span>
+            </div>
+            <div class="mt-3 flex gap-4 text-xs text-slate-600 dark:text-slate-400">
+                <div>
+                    <span class="font-medium">Created:</span>
+                    <span id="created-date">...</span>
+                </div>
+                <div>
+                    <span class="font-medium">Doctor:</span>
+                    <span id="doctor-name">...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Audio Files Section -->
+        <div id="audio-section" class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 hidden">
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Audio Recordings</h3>
+            <div id="audio-files-container" class="space-y-2">
+                <!-- Audio files will be inserted here -->
+            </div>
+        </div>
+        
+        <!-- Transcription Section -->
+        <div id="transcription-section" class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 hidden">
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Transcription</h3>
+            <div id="transcription-text" class="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
+                <!-- Transcription will be inserted here -->
+            </div>
+        </div>
+        
+        <!-- Prescription Sections -->
+        <div id="sections-container" class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 hidden">
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Prescription Details</h3>
+            <div id="sections-list" class="space-y-4">
+                <!-- Sections will be inserted here -->
+            </div>
+        </div>
+        
+        <!-- Actions -->
+        <div class="px-6 py-4 space-y-2">
+            <!-- Download PDF Button -->
+            <button id="download-pdf-btn" class="hidden w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[20px]">download</span>
+                <span>Download PDF</span>
+            </button>
+            
+            <!-- Delete Button -->
+            <button id="delete-btn" class="hidden w-full py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[20px]">delete</span>
+                <span>Delete Prescription</span>
+            </button>
+            
+            <!-- Restore Button -->
+            <button id="restore-btn" class="hidden w-full py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 transition-colors flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[20px]">restore</span>
+                <span>Restore Prescription</span>
+            </button>
+            
+            <!-- Restore Deadline -->
+            <p id="restore-deadline" class="hidden text-xs text-center text-slate-500">
+                Can be restored until <span id="deadline-date"></span>
+            </p>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 mx-4 max-w-sm w-full">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-2">Delete Prescription?</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                This prescription will be moved to deleted state. You can restore it within 30 days.
+            </p>
+            <div class="flex gap-2">
+                <button onclick="cancelDelete()" class="flex-1 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-medium">
+                    Cancel
+                </button>
+                <button onclick="confirmDelete()" class="flex-1 py-2 bg-red-500 text-white rounded-lg font-medium">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom Navigation Bar -->
+    <div class="pb-4 flex justify-center">
+        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .state-badge {
+        @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium;
+    }
+    
+    .state-draft {
+        @apply bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300;
+    }
+    
+    .state-inprogress {
+        @apply bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400;
+    }
+    
+    .state-finalized {
+        @apply bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400;
+    }
+    
+    .state-deleted {
+        @apply bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400;
+    }
+    
+    .section-card {
+        @apply bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4;
+    }
+    
+    .section-title {
+        @apply text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2;
+    }
+    
+    .section-content {
+        @apply text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const prescriptionId = "{{ prescription_id }}";
+</script>
+<script src="{{ url_for('static', filename='js/prescription_detail.js') }}"></script>
+{% endblock %}

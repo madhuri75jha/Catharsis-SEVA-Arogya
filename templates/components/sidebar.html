@@ -1,0 +1,45 @@
+<!-- Sidebar Component -->
+<!-- Mobile Overlay -->
+<div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden transition-opacity" onclick="closeSidebar()"></div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="fixed top-0 left-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col">
+    <!-- Header -->
+    <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-primary text-[32px]">medical_services</span>
+                <h1 class="text-xl font-bold text-slate-800 dark:text-white">SEVA Arogya</h1>
+            </div>
+            <button onclick="closeSidebar()" class="md:hidden text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Navigation Menu -->
+    <nav id="sidebar-menu" class="flex-1 overflow-y-auto p-4">
+        <!-- Menu items will be dynamically populated by JavaScript -->
+        <div class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+    </nav>
+    
+    <!-- User Profile Section -->
+    <div id="sidebar-profile" class="p-4 border-t border-slate-200 dark:border-slate-800">
+        <div class="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors" onclick="window.location.href='/profile'">
+            <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <span class="material-symbols-outlined text-primary text-[20px]">person</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p id="sidebar-user-name" class="text-sm font-medium text-slate-800 dark:text-white truncate">Loading...</p>
+                <p id="sidebar-user-role" class="text-xs text-slate-500 dark:text-slate-400 truncate">Loading...</p>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- Mobile Hamburger Button -->
+<button id="sidebar-toggle" class="fixed top-4 left-4 z-30 md:hidden bg-white dark:bg-slate-900 p-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-800" onclick="openSidebar()">
+    <span class="material-symbols-outlined text-slate-700 dark:text-slate-300">menu</span>
+</button>

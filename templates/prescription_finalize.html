@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}SEVA Arogya - Finalize Prescription{% endblock %}
+
+{% block content %}
+<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+    <!-- Header -->
+    <div class="px-6 pt-12 pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center justify-between">
+            <button onclick="window.location.href='/prescriptions'" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold text-slate-800 dark:text-white">Finalize Prescription</h1>
+            <div class="w-10"></div>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loading-state" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p class="mt-2 text-sm text-slate-500">Loading prescription...</p>
+        </div>
+    </div>
+    
+    <!-- Error State -->
+    <div id="error-state" class="hidden flex-1 flex items-center justify-center">
+        <div class="text-center px-6">
+            <span class="material-symbols-outlined text-[64px] text-red-300 dark:text-red-700">error</span>
+            <p id="error-message" class="mt-2 text-sm text-red-500">Failed to load prescription</p>
+            <button onclick="window.location.reload()" class="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm">Retry</button>
+        </div>
+    </div>
+    
+    <!-- Prescription Content -->
+    <div id="prescription-content" class="hidden flex-1 flex flex-col">
+        <!-- Patient Info -->
+        <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-3">
+                <div class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span id="patient-initials" class="text-sm font-semibold text-primary">?</span>
+                </div>
+                <div class="flex-1">
+                    <h2 id="patient-name" class="text-base font-semibold text-slate-800 dark:text-white">Loading...</h2>
+                    <p id="prescription-id" class="text-xs text-slate-500">#...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Progress Indicator -->
+        <div class="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-900/30">
+            <div class="flex items-center justify-between text-xs">
+                <span class="text-blue-600 dark:text-blue-400 font-medium">
+                    <span id="approved-count">0</span> of <span id="required-count">0</span> sections approved
+                </span>
+                <span id="progress-percentage" class="text-blue-600 dark:text-blue-400 font-bold">0%</span>
+            </div>
+            <div class="mt-2 h-2 bg-blue-100 dark:bg-blue-900/30 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <!-- Sections List -->
+        <div class="flex-1 overflow-y-auto">
+            <div id="sections-container" class="px-6 py-4 space-y-4">
+                <!-- Sections will be inserted here -->
+            </div>
+        </div>
+        
+        <!-- Finalize Button (Fixed at bottom) -->
+        <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-background-dark">
+            <button 
+                id="finalize-btn" 
+                disabled
+                class="w-full py-3 bg-primary text-white rounded-xl font-medium disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+            >
+                <span class="material-symbols-outlined text-[20px]">check_circle</span>
+                <span>Finalize Prescription</span>
+            </button>
+            <p class="mt-2 text-xs text-center text-slate-500">
+                All required sections must be approved to finalize
+            </p>
+        </div>
+    </div>
+    
+    <!-- Bottom Navigation Bar -->
+    <div class="pb-4 flex justify-center">
+        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .section-card {
+        @apply bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border-2 transition-all;
+    }
+    
+    .section-pending {
+        @apply border-slate-200 dark:border-slate-700;
+    }
+    
+    .section-approved {
+        @apply border-green-500 bg-green-50 dark:bg-green-900/20;
+    }
+    
+    .section-rejected {
+        @apply border-red-500 bg-red-50 dark:bg-red-900/20;
+    }
+    
+    .section-header {
+        @apply flex items-center justify-between mb-3;
+    }
+    
+    .section-title {
+        @apply text-sm font-semibold text-slate-700 dark:text-slate-300;
+    }
+    
+    .section-badge {
+        @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium;
+    }
+    
+    .badge-pending {
+        @apply bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300;
+    }
+    
+    .badge-approved {
+        @apply bg-green-500 text-white;
+    }
+    
+    .badge-rejected {
+        @apply bg-red-500 text-white;
+    }
+    
+    .section-content {
+        @apply text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap mb-3 p-3 bg-white dark:bg-slate-800 rounded-lg;
+    }
+    
+    .section-content-editable {
+        @apply text-sm text-slate-600 dark:text-slate-400 p-3 bg-white dark:bg-slate-800 rounded-lg border-2 border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 mb-3;
+    }
+    
+    .section-actions {
+        @apply flex gap-2;
+    }
+    
+    .btn-approve {
+        @apply flex-1 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors flex items-center justify-center gap-1;
+    }
+    
+    .btn-reject {
+        @apply flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors flex items-center justify-center gap-1;
+    }
+    
+    .btn-save {
+        @apply flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-1;
+    }
+    
+    .btn-cancel {
+        @apply flex-1 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors;
+    }
+    
+    .required-indicator {
+        @apply inline-flex items-center text-xs text-red-500 ml-1;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const prescriptionId = "{{ prescription_id }}";
+</script>
+<script src="{{ url_for('static', filename='js/prescription_finalize.js') }}"></script>
+{% endblock %}

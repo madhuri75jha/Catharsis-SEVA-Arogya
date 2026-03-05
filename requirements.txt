@@ -14,3 +14,5 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 gunicorn==21.2.0
 pydantic==2.10.5
+reportlab==4.0.7
+APScheduler==3.10.4
