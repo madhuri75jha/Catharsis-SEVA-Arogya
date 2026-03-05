@@ -7,7 +7,7 @@
     <!-- Header Section -->
     <div class="px-6 pt-8 pb-4 border-b border-slate-100 dark:border-slate-800">
         <div class="flex items-center mb-4">
-            <button onclick="window.location.href='/home'" class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <button onclick="window.navigateWithTransition('/home')" class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                 <span class="material-symbols-outlined text-slate-600 dark:text-slate-400">arrow_back</span>
             </button>
             <h1 class="text-xl font-bold text-slate-800 dark:text-white ml-3">Consultation Details</h1>
@@ -141,6 +141,36 @@
         <div class="mb-6">
             <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Prescription</h3>
             <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                        #{{ consultation.prescription.prescription_id }}
+                    </p>
+                    {% if consultation.prescription.state %}
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold
+                        {% if consultation.prescription.state == 'Finalized' %}bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400
+                        {% elif consultation.prescription.state == 'InProgress' %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400
+                        {% elif consultation.prescription.state == 'Draft' %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300
+                        {% else %}bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400{% endif %}">
+                        {{ consultation.prescription.state }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                {% if consultation.prescription.sections and consultation.prescription.sections|length > 0 %}
+                <div class="space-y-3 mb-4">
+                    {% for section in consultation.prescription.sections %}
+                    {% if section.content %}
+                    <div>
+                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                            {{ section.title if section.title else section.key }}
+                        </p>
+                        <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap mt-1">{{ section.content }}</p>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
                 {% if consultation.prescription.medications and consultation.prescription.medications|length > 0 %}
                 <div class="space-y-3">
                     {% for medication in consultation.prescription.medications %}
@@ -175,6 +205,19 @@
                 {% else %}
                 <p class="text-sm text-slate-500 dark:text-slate-400 italic">No medications listed</p>
                 {% endif %}
+
+                {% if consultation.prescription.state == 'Finalized' %}
+                <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <button
+                        id="download-prescription-pdf-btn"
+                        data-prescription-id="{{ consultation.prescription.prescription_id }}"
+                        class="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                        type="button">
+                        <span class="material-symbols-outlined text-[20px]">download</span>
+                        <span>Download Prescription PDF</span>
+                    </button>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -182,7 +225,7 @@
     
     <!-- Bottom Navigation -->
     <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800">
-        <button onclick="window.location.href='/home'" class="w-full bg-primary text-white font-semibold py-3 px-4 rounded-xl hover:bg-primary/90 active:scale-98 transition-all flex items-center justify-center">
+        <button onclick="window.navigateWithTransition('/home')" class="w-full bg-primary text-white font-semibold py-3 px-4 rounded-xl hover:bg-primary/90 active:scale-98 transition-all flex items-center justify-center">
             <span class="material-symbols-outlined mr-2">arrow_back</span>
             Back to Home
         </button>
@@ -192,6 +235,42 @@
         <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const downloadBtn = document.getElementById('download-prescription-pdf-btn');
+    if (!downloadBtn) return;
+
+    downloadBtn.addEventListener('click', async () => {
+        const prescriptionId = downloadBtn.dataset.prescriptionId;
+        if (!prescriptionId) return;
+
+        downloadBtn.disabled = true;
+        downloadBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span><span>Generating PDF...</span>';
+
+        try {
+            const response = await fetch(`/api/v1/prescriptions/${prescriptionId}/pdf`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (data.success && data.download_url) {
+                window.open(data.download_url, '_blank');
+            } else {
+                alert(data.message || 'Failed to generate PDF');
+            }
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('An error occurred while generating the PDF');
+        } finally {
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">download</span><span>Download Prescription PDF</span>';
+        }
+    });
+});
+</script>
 {% endblock %}
 
 {% block extra_css %}

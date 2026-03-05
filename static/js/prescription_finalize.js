@@ -374,7 +374,7 @@ class PrescriptionFinalizeManager {
             
             if (data.success) {
                 // Redirect to thank you page
-                window.location.href = data.redirect_url || '/thank-you';
+                window.navigateWithTransition(data.redirect_url || '/thank-you');
             } else {
                 alert(data.message || 'Failed to finalize prescription');
                 

@@ -222,6 +222,8 @@ module "ecs" {
     AWS_COMPREHEND_REGION     = var.comprehend_region
     BEDROCK_REGION            = var.bedrock_region
     BEDROCK_MODEL_ID          = var.bedrock_model_id
+    CLOUDWATCH_LOG_GROUP_NAME = "/ecs/${var.project_name}-${var.env_name}"
+    AWS_CLOUDWATCH_REGION     = var.aws_region
     EVENTLET_NO_GREENDNS      = "yes"
     AWS_COGNITO_USER_POOL_ID  = module.cognito.user_pool_id
     AWS_COGNITO_CLIENT_ID     = module.cognito.app_client_id

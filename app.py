@@ -254,6 +254,8 @@ def init_app():
         if cloudwatch_log_group:
             cloudwatch_service = CloudWatchService(cloudwatch_log_group, cloudwatch_region)
             logger.info(f"CloudWatch service initialized: log_group={cloudwatch_log_group}")
+        else:
+            logger.warning("CloudWatch service disabled: CLOUDWATCH_LOG_GROUP_NAME is not set")
         
         # Initialize route blueprints with services
         init_prescription_routes(prescription_service, rbac_service, pdf_generator, database_manager)
@@ -448,11 +450,18 @@ def bedrock_prescription():
     return render_template('bedrock_prescription.html')
 
 
+@app.route('/consultations')
+@login_required
+def consultations_list():
+    """Consultations list page"""
+    return render_template('prescriptions_list.html')
+
+
 @app.route('/prescriptions')
 @login_required
-def prescriptions_list():
-    """Prescriptions list page"""
-    return render_template('prescriptions_list.html')
+def prescriptions_list_legacy():
+    """Legacy route - redirect prescriptions list to consultations list"""
+    return redirect(url_for('consultations_list'))
 
 
 @app.route('/prescriptions/<prescription_id>')
@@ -695,30 +704,66 @@ def consultation_detail(consultation_id):
                 logger.warning(f"Failed to parse medical_entities for consultation {consultation_id}: {str(e)}")
                 medical_entities = []
         
-        # Query associated prescription (if exists)
+        # Query associated prescription by consultation_id first (deterministic match).
         query_prescription = """
-        SELECT 
+        SELECT
             prescription_id,
             patient_name,
             medications,
-            created_at
+            sections,
+            state,
+            s3_key,
+            created_at,
+            finalized_at
         FROM prescriptions
-        WHERE user_id = %s 
-            AND created_at >= %s 
-            AND created_at <= %s + INTERVAL '1 hour'
-        ORDER BY created_at ASC
+        WHERE user_id = %s
+          AND consultation_id = %s
+        ORDER BY created_at DESC
         LIMIT 1
         """
-        
+
         prescription_result = database_manager.execute_with_retry(
             query_prescription,
-            (user_id, created_at, created_at)
+            (user_id, str(consultation_id_value))
         )
+
+        # Legacy fallback for old records that may not have consultation_id populated.
+        if not prescription_result:
+            legacy_query_prescription = """
+            SELECT
+                prescription_id,
+                patient_name,
+                medications,
+                sections,
+                state,
+                s3_key,
+                created_at,
+                finalized_at
+            FROM prescriptions
+            WHERE user_id = %s
+              AND created_at >= %s
+              AND created_at <= %s + INTERVAL '1 hour'
+            ORDER BY created_at ASC
+            LIMIT 1
+            """
+            prescription_result = database_manager.execute_with_retry(
+                legacy_query_prescription,
+                (user_id, created_at, created_at)
+            )
         
         prescription = None
         if prescription_result and len(prescription_result) > 0:
             presc_row = prescription_result[0]
-            (presc_id, patient_name, medications, presc_created_at) = presc_row
+            (
+                presc_id,
+                patient_name,
+                medications,
+                sections,
+                prescription_state,
+                prescription_s3_key,
+                presc_created_at,
+                presc_finalized_at
+            ) = presc_row
             
             # Parse medications JSONB
             medications_list = []
@@ -731,12 +776,28 @@ def consultation_detail(consultation_id):
                 except (json.JSONDecodeError, TypeError) as e:
                     logger.warning(f"Failed to parse medications for prescription {presc_id}: {str(e)}")
                     medications_list = []
+
+            # Parse sections JSONB (for finalized prescriptions where content is stored in sections)
+            sections_list = []
+            if sections:
+                try:
+                    if isinstance(sections, str):
+                        sections_list = json.loads(sections)
+                    else:
+                        sections_list = sections
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Failed to parse sections for prescription {presc_id}: {str(e)}")
+                    sections_list = []
             
             prescription = {
                 'prescription_id': presc_id,
                 'patient_name': patient_name,
                 'medications': medications_list,
-                'created_at': presc_created_at
+                'sections': sections_list,
+                'state': prescription_state,
+                's3_key': prescription_s3_key,
+                'created_at': presc_created_at,
+                'finalized_at': presc_finalized_at
             }
 
         clip_rows = database_manager.execute_with_retry(
@@ -1694,6 +1755,7 @@ def api_get_hospital_config(hospital_id):
 
 
 @app.route('/api/consultations', methods=['GET'])
+@app.route('/api/v1/consultations', methods=['GET'])
 @login_required
 def api_get_consultations():
     """
@@ -1702,7 +1764,7 @@ def api_get_consultations():
     Retrieve recent consultations for authenticated user
     
     Query Parameters:
-        limit (int, optional): Maximum consultations to return (default: 10, max: 50)
+        limit (int, optional): Maximum consultations to return (default: 15, max: 50)
     
     Returns:
         JSON response with consultation list or error
@@ -1721,16 +1783,16 @@ def api_get_consultations():
             }), 401
         
         # Parse and validate limit query parameter
-        limit = request.args.get('limit', '10')
+        limit = request.args.get('limit', '15')
         try:
             limit = int(limit)
-            # Cap limit at 50, default to 10 if invalid
+            # Cap limit at 50, default to 15 if invalid
             if limit < 1 or limit > 50:
-                logger.warning(f"Invalid limit parameter: {limit}, using default 10")
-                limit = 10
+                logger.warning(f"Invalid limit parameter: {limit}, using default 15")
+                limit = 15
         except ValueError:
-            logger.warning(f"Non-integer limit parameter: {limit}, using default 10")
-            limit = 10
+            logger.warning(f"Non-integer limit parameter: {limit}, using default 15")
+            limit = 15
         
         # Check if we should use mock data (for local development)
         use_mock_data = os.getenv('USE_MOCK_CONSULTATIONS', 'false').lower() == 'true'

@@ -16,8 +16,8 @@ class ConsultationService:
         Retrieve recent consultations for a user
         
         A consultation is defined as a consultation record that can have multiple
-        transcription clips. Prescriptions are joined by matching user_id and
-        temporal proximity (within 1 hour from consultation creation).
+        transcription clips. Prescriptions are joined by consultation_id first,
+        with a legacy fallback to temporal proximity for older rows.
         
         Args:
             user_id: ID of the authenticated user
@@ -49,7 +49,8 @@ class ConsultationService:
             c.created_at,
             p.prescription_id,
             p.patient_name,
-            p.medications
+            p.medications,
+            p.state
         FROM consultations c
         LEFT JOIN LATERAL (
             SELECT
@@ -70,11 +71,23 @@ class ConsultationService:
             WHERE t.consultation_id = c.consultation_id
               AND t.user_id = c.user_id
         ) clips ON TRUE
-        LEFT JOIN prescriptions p ON (
-            c.user_id = p.user_id
-            AND p.created_at >= c.created_at
-            AND p.created_at <= c.created_at + INTERVAL '1 hour'
-        )
+        LEFT JOIN LATERAL (
+            SELECT p1.prescription_id, p1.patient_name, p1.medications, p1.state
+            FROM prescriptions p1
+            WHERE p1.user_id = c.user_id
+              AND (
+                p1.consultation_id = c.consultation_id
+                OR (
+                  p1.consultation_id IS NULL
+                  AND p1.created_at >= c.created_at
+                  AND p1.created_at <= c.created_at + INTERVAL '1 hour'
+                )
+              )
+            ORDER BY
+              CASE WHEN p1.consultation_id = c.consultation_id THEN 0 ELSE 1 END,
+              p1.created_at DESC
+            LIMIT 1
+        ) p ON TRUE
         WHERE c.user_id = %s
         ORDER BY c.created_at DESC
         LIMIT %s
@@ -109,7 +122,7 @@ class ConsultationService:
             Formatted consultation dictionary
         """
         (transcription_id, user_id, transcript_text, status, medical_entities_json,
-         created_at, prescription_id, prescription_patient_name, medications) = row
+         created_at, prescription_id, prescription_patient_name, medications, prescription_state) = row
         
         # Parse medical_entities JSONB
         medical_entities = []
@@ -147,6 +160,7 @@ class ConsultationService:
             "created_at": created_at.isoformat() if created_at else None,
             "has_prescription": prescription_id is not None,
             "prescription_id": str(prescription_id) if prescription_id else None,
+            "prescription_state": prescription_state,
             "transcript_preview": transcript_preview
         }
         

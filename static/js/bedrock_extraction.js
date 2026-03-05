@@ -86,7 +86,7 @@ async function submitTranscriptForExtraction(transcript, hospitalId = 'default',
             const consultationParam = options.consultationId
                 ? `&consultation_id=${encodeURIComponent(options.consultationId)}`
                 : '';
-            window.location.href = `/bedrock-prescription?hospital_id=${hospitalId}${consultationParam}`;
+            window.navigateWithTransition(`/bedrock-prescription?hospital_id=${hospitalId}${consultationParam}`);
         } else {
             throw new Error(result.error_message || 'Extraction failed');
         }
@@ -198,7 +198,7 @@ function showExtractionError(message) {
  */
 function useManualReview() {
     closeExtractionError();
-    window.location.href = '/final-prescription';
+    window.navigateWithTransition('/final-prescription');
 }
 
 /**

@@ -41,7 +41,7 @@
     <div class="px-6 py-6 border-t border-slate-100 dark:border-slate-800">
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Recent Consultations</h3>
-            <button id="view-all-btn" onclick="window.location.href='/prescriptions'" class="text-xs font-bold text-primary hidden">View All</button>
+            <button id="view-all-btn" onclick="window.navigateWithTransition('/consultations')" class="text-xs font-bold text-primary hidden">View All</button>
         </div>
         
         <!-- Consultations container - dynamically populated by JavaScript -->
@@ -66,13 +66,13 @@
 <script src="{{ url_for('static', filename='js/home_debug.js') }}"></script>
 <script>
     function startConsultation() {
-        window.location.href = '/transcription';
+        window.navigateWithTransition('/transcription');
     }
     
     function handleHomeSearch() {
         const searchInput = document.getElementById('home-search-input');
         if (searchInput && searchInput.value.trim()) {
-            window.location.href = `/prescriptions?search=${encodeURIComponent(searchInput.value.trim())}`;
+            window.navigateWithTransition(`/consultations?search=${encodeURIComponent(searchInput.value.trim())}`);
         }
     }
 </script>

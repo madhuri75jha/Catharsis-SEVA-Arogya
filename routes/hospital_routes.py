@@ -1,5 +1,6 @@
 """Hospital and User Management API Routes"""
 import logging
+import os
 from flask import Blueprint, request, jsonify, session
 from functools import wraps
 import json
@@ -381,7 +382,15 @@ def get_logs():
     """Get CloudWatch logs (DeveloperAdmin only)"""
     try:
         if not cloudwatch_service:
-            return jsonify({'success': False, 'message': 'CloudWatch service not configured'}), 503
+            return jsonify({
+                'success': False,
+                'message': 'CloudWatch service not configured',
+                'required_env': ['CLOUDWATCH_LOG_GROUP_NAME', 'AWS_CLOUDWATCH_REGION'],
+                'configured': {
+                    'CLOUDWATCH_LOG_GROUP_NAME': bool(os.getenv('CLOUDWATCH_LOG_GROUP_NAME')),
+                    'AWS_CLOUDWATCH_REGION': bool(os.getenv('AWS_CLOUDWATCH_REGION'))
+                }
+            }), 503
         
         # Parse query parameters
         start_time_str = request.args.get('start_time', '')

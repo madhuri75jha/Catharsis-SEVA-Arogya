@@ -89,7 +89,6 @@
                         <option value="">Select role</option>
                         <option value="Doctor">Doctor</option>
                         <option value="HospitalAdmin">Hospital Admin</option>
-                        <option value="DeveloperAdmin">Developer Admin</option>
                     </select>
                 </div>
                 <div>
@@ -247,7 +246,7 @@
             const data = await response.json();
             
             if (data.success) {
-                window.location.href = '/home';
+                window.navigateWithTransition('/home');
             } else {
                 setMessage(errorEl, data.message || 'Login failed. Please try again.', true);
             }

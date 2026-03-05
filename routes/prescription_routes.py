@@ -74,7 +74,7 @@ def get_prescriptions():
         - start_date: Filter by created_at >= start_date
         - end_date: Filter by created_at <= end_date
         - state: Filter by state (Draft, InProgress, Finalized, Deleted)
-        - limit: Number of results (default 50, max 100)
+        - limit: Number of results (default 15, max 100)
         - offset: Pagination offset (default 0)
     """
     try:
@@ -90,10 +90,10 @@ def get_prescriptions():
         state = request.args.get('state', '').strip()
         
         try:
-            limit = min(int(request.args.get('limit', 50)), 100)
+            limit = min(int(request.args.get('limit', 15)), 100)
             offset = int(request.args.get('offset', 0))
         except ValueError:
-            limit, offset = 50, 0
+            limit, offset = 15, 0
         
         # Build WHERE clause based on role
         where_clauses = [rbac_service.get_prescription_filter_sql(user_id, user_role, user_hospital)]
@@ -134,25 +134,40 @@ def get_prescriptions():
         ORDER BY p.created_at DESC
         LIMIT %s OFFSET %s
         """
-        params.extend([limit, offset])
-        
-        results = database_manager.execute_with_retry(query, tuple(params))
-        
+        query_params = params + [limit, offset]
+
+        results = database_manager.execute_with_retry(query, tuple(query_params))
+
         # Count total
         count_query = f"SELECT COUNT(*) FROM prescriptions p WHERE {where_sql}"
-        count_result = database_manager.execute_with_retry(count_query, tuple(params[:-2]))
+        count_result = database_manager.execute_with_retry(count_query, tuple(params))
         total = count_result[0][0] if count_result else 0
         
         # Format prescriptions
         prescriptions = []
         if results:
             for row in results:
-                sections = json.loads(row[5]) if isinstance(row[5], str) else row[5]
+                sections_raw = row[5]
+                if isinstance(sections_raw, str):
+                    try:
+                        sections = json.loads(sections_raw)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid sections JSON for prescription {row[0]}")
+                        sections = []
+                elif isinstance(sections_raw, list):
+                    sections = sections_raw
+                else:
+                    sections = []
                 
                 # Build section statuses summary
                 section_statuses = {}
                 for section in sections:
-                    section_statuses[section['key']] = section.get('status', 'Pending')
+                    if not isinstance(section, dict):
+                        continue
+                    section_key = section.get('key')
+                    if not section_key:
+                        continue
+                    section_statuses[section_key] = section.get('status', 'Pending')
                 
                 prescriptions.append({
                     'prescription_id': str(row[0]),

@@ -3,21 +3,18 @@ class TransitionOverlay {
     constructor() {
         this.overlay = document.getElementById('transition-overlay');
         this.icon = document.getElementById('transition-icon');
-        this.isShowing = false;
         this.duration = 500; // milliseconds
+        this.isShowing = Boolean(this.overlay && this.overlay.classList.contains('opacity-100'));
+        this.isNavigating = false;
     }
 
     show() {
-        if (!this.overlay || this.isShowing) return;
-        
+        if (!this.overlay) return;
+
         this.isShowing = true;
-        
-        // Make overlay visible
-        this.overlay.classList.remove('pointer-events-none');
-        this.overlay.classList.remove('opacity-0');
+        this.overlay.classList.remove('pointer-events-none', 'opacity-0');
         this.overlay.classList.add('opacity-100');
-        
-        // Animate icon slide up
+
         if (this.icon) {
             this.icon.classList.remove('translate-y-4');
             this.icon.classList.add('translate-y-0');
@@ -25,104 +22,110 @@ class TransitionOverlay {
     }
 
     hide() {
-        if (!this.overlay || !this.isShowing) return;
-        
-        // Fade out overlay
+        if (!this.overlay) return;
+
         this.overlay.classList.remove('opacity-100');
         this.overlay.classList.add('opacity-0');
-        
-        // Reset icon position
+
         if (this.icon) {
             this.icon.classList.remove('translate-y-0');
             this.icon.classList.add('translate-y-4');
         }
-        
-        // Remove pointer events after animation completes
+
         setTimeout(() => {
             this.overlay.classList.add('pointer-events-none');
             this.isShowing = false;
         }, this.duration);
     }
 
-    showAndHide(duration = 800) {
+    navigate(url, { replace = false, delay = this.duration } = {}) {
+        if (!url || this.isNavigating) return;
+
+        this.isNavigating = true;
         this.show();
-        setTimeout(() => this.hide(), duration);
+
+        setTimeout(() => {
+            if (replace) {
+                window.location.replace(url);
+                return;
+            }
+            window.location.href = url;
+        }, Math.max(delay, 0));
     }
 }
 
-// Global instance
 let transitionOverlay = null;
 
-// Setup route interception for navigation
-function setupRouteInterception() {
-    // Intercept all internal link clicks
-    document.addEventListener('click', (e) => {
-        const link = e.target.closest('a');
-        
-        // Only intercept internal links
-        if (link && 
-            link.href && 
-            link.href.startsWith(window.location.origin) &&
-            !link.hasAttribute('target') &&
-            !link.hasAttribute('download') &&
-            !link.classList.contains('no-transition')) {
-            
-            e.preventDefault();
-            
-            if (transitionOverlay) {
-                transitionOverlay.show();
-                
-                // Navigate after showing overlay
-                setTimeout(() => {
-                    window.location.href = link.href;
-                }, 300);
-            } else {
-                // Fallback if overlay not initialized
-                window.location.href = link.href;
-            }
+function directNavigate(url, options = {}) {
+    if (!url) return;
+    if (!transitionOverlay) {
+        if (options.replace) {
+            window.location.replace(url);
+            return;
         }
-    });
-
-    // Intercept form submissions that redirect
-    document.addEventListener('submit', (e) => {
-        const form = e.target;
-        
-        // Only intercept forms with data-transition attribute
-        if (form && form.hasAttribute('data-transition')) {
-            if (transitionOverlay) {
-                transitionOverlay.show();
-            }
-        }
-    });
-
-    // Show overlay on page load, then hide
-    if (transitionOverlay && document.readyState === 'complete') {
-        transitionOverlay.showAndHide(400);
+        window.location.href = url;
+        return;
     }
+    transitionOverlay.navigate(url, options);
 }
 
-// Initialize on page load
+function setupRouteInterception() {
+    document.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+        const link = e.target.closest('a[href]');
+        if (!link) return;
+        if (link.classList.contains('no-transition')) return;
+        if (link.hasAttribute('download') || link.hasAttribute('target')) return;
+
+        const href = link.getAttribute('href');
+        if (!href || href.startsWith('#')) return;
+
+        const destination = new URL(link.href, window.location.origin);
+        if (destination.origin !== window.location.origin) return;
+
+        const isSameDocumentAnchor = destination.pathname === window.location.pathname &&
+            destination.search === window.location.search &&
+            destination.hash;
+        if (isSameDocumentAnchor) return;
+
+        e.preventDefault();
+        directNavigate(destination.href);
+    });
+
+    document.addEventListener('submit', (e) => {
+        const form = e.target;
+        if (!form || !form.hasAttribute('data-transition')) return;
+
+        e.preventDefault();
+        if (transitionOverlay) transitionOverlay.show();
+        setTimeout(() => form.submit(), transitionOverlay ? transitionOverlay.duration : 0);
+    });
+}
+
+window.navigateWithTransition = (url, options = {}) => {
+    directNavigate(url, options);
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     transitionOverlay = new TransitionOverlay();
     setupRouteInterception();
-    
-    // Show and hide overlay on initial page load
+
+    const hideOverlay = () => {
+        if (!transitionOverlay) return;
+        requestAnimationFrame(() => transitionOverlay.hide());
+    };
+
     if (document.readyState === 'complete') {
-        transitionOverlay.showAndHide(400);
+        hideOverlay();
+    } else {
+        window.addEventListener('load', hideOverlay, { once: true });
     }
 });
 
-// Handle page load complete
-window.addEventListener('load', () => {
-    if (transitionOverlay && !transitionOverlay.isShowing) {
-        transitionOverlay.showAndHide(400);
-    }
-});
-
-// Handle browser back/forward navigation
 window.addEventListener('pageshow', (event) => {
-    if (event.persisted && transitionOverlay) {
-        // Page was loaded from cache (back/forward button)
-        transitionOverlay.showAndHide(400);
-    }
+    if (!event.persisted || !transitionOverlay) return;
+    transitionOverlay.show();
+    requestAnimationFrame(() => transitionOverlay.hide());
 });

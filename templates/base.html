@@ -74,14 +74,20 @@
         }
     </style>
     
+    {% set show_sidebar = session.get('user_id') and request.path != url_for('login') %}
+
+    {% if show_sidebar %}
     <!-- Sidebar CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/sidebar.css') }}">
+    {% endif %}
     
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-background-light dark:bg-background-dark font-display">
+    {% if show_sidebar %}
     <!-- Sidebar Component -->
     {% include 'components/sidebar.html' %}
+    {% endif %}
     
     <!-- Transition Overlay Component -->
     {% include 'components/transition_overlay.html' %}
@@ -94,8 +100,10 @@
         <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
     </div>
     
+    {% if show_sidebar %}
     <!-- Sidebar JavaScript -->
     <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+    {% endif %}
     
     <!-- Transition Overlay JavaScript -->
     <script src="{{ url_for('static', filename='js/transition_overlay.js') }}"></script>

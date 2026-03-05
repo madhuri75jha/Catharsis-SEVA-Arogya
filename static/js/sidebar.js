@@ -79,9 +79,38 @@ function renderMenuItems(menuItems) {
             </li>
         `;
     });
+
+    menuHTML += `
+        <li class="pt-2 mt-2 border-t border-slate-200 dark:border-slate-800">
+            <button id="sidebar-logout-btn"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    type="button">
+                <span class="material-symbols-outlined text-[20px]">logout</span>
+                <span class="text-sm font-medium">Logout</span>
+            </button>
+        </li>
+    `;
     
     menuHTML += '</ul>';
     menuContainer.innerHTML = menuHTML;
+}
+
+async function handleLogout() {
+    const logoutButton = document.getElementById('sidebar-logout-btn');
+    if (logoutButton) {
+        logoutButton.disabled = true;
+    }
+
+    try {
+        await fetch('/api/v1/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+    } catch (error) {
+        console.error('Logout request failed:', error);
+    } finally {
+        window.navigateWithTransition('/login');
+    }
 }
 
 // Render user profile section
@@ -125,6 +154,12 @@ window.addEventListener('popstate', () => {
 
 // Close sidebar when clicking a link (mobile)
 document.addEventListener('click', (e) => {
+    if (e.target.closest('#sidebar-logout-btn')) {
+        e.preventDefault();
+        handleLogout();
+        return;
+    }
+
     const link = e.target.closest('a');
     if (link && link.closest('#sidebar-menu') && window.innerWidth < 768) {
         // Small delay to allow navigation to start

@@ -58,50 +58,41 @@ def sync_user_role_from_cognito(database_manager, user_info: Dict[str, Any], use
             logger.error(f"Missing required custom:hospital_id for user {user_id} with role {role}")
             return None
         
-        # Upsert to user_roles table
-        conn = database_manager.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Check if user role already exists
-            cursor.execute(
-                "SELECT role, hospital_id FROM user_roles WHERE user_id = %s",
-                (user_id,)
-            )
-            existing_role = cursor.fetchone()
-            
-            if existing_role:
-                # Update existing role
+        # Upsert to user_roles table using DatabaseManager connection context manager
+        with database_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # Check if user role already exists
                 cursor.execute(
-                    """
-                    UPDATE user_roles 
-                    SET role = %s, hospital_id = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = %s
-                    """,
-                    (role, hospital_id, user_id)
+                    "SELECT role, hospital_id FROM user_roles WHERE user_id = %s",
+                    (user_id,)
                 )
-                logger.info(f"Updated role for user {user_id}: {role} (hospital: {hospital_id})")
-            else:
-                # Insert new role
-                cursor.execute(
-                    """
-                    INSERT INTO user_roles (user_id, role, hospital_id, created_at, updated_at)
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                    (user_id, role, hospital_id)
-                )
-                logger.info(f"Created role for user {user_id}: {role} (hospital: {hospital_id})")
-            
-            conn.commit()
-            return role
-            
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Database error syncing role for user {user_id}: {str(e)}")
-            return None
-        finally:
-            cursor.close()
-            
+                existing_role = cursor.fetchone()
+
+                if existing_role:
+                    # Update existing role
+                    cursor.execute(
+                        """
+                        UPDATE user_roles
+                        SET role = %s, hospital_id = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s
+                        """,
+                        (role, hospital_id, user_id)
+                    )
+                    logger.info(f"Updated role for user {user_id}: {role} (hospital: {hospital_id})")
+                else:
+                    # Insert new role
+                    cursor.execute(
+                        """
+                        INSERT INTO user_roles (user_id, role, hospital_id, created_at, updated_at)
+                        VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                        (user_id, role, hospital_id)
+                    )
+                    logger.info(f"Created role for user {user_id}: {role} (hospital: {hospital_id})")
+
+                conn.commit()
+                return role
+
     except Exception as e:
         logger.error(f"Error syncing user role from Cognito for {user_id}: {str(e)}")
         return None

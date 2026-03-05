@@ -4,12 +4,13 @@
 
 // Global state
 let allConsultations = [];
-let isExpanded = false;
+const HOME_PREVIEW_LIMIT = 5;
+const HOME_FETCH_LIMIT = 15;
 
 /**
  * Fetch consultations from API
  */
-async function fetchConsultations(limit = 10) {
+async function fetchConsultations(limit = HOME_PREVIEW_LIMIT) {
     console.log('[DEBUG] Fetching consultations with limit:', limit);
     
     try {
@@ -23,7 +24,7 @@ async function fetchConsultations(limit = 10) {
         if (!response.ok) {
             if (response.status === 401) {
                 console.error('[DEBUG] Authentication failure - redirecting to login');
-                window.location.href = '/login';
+                window.navigateWithTransition('/login');
                 return [];
             }
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -49,8 +50,8 @@ async function fetchConsultations(limit = 10) {
 /**
  * Render consultation cards in the DOM
  */
-function renderConsultations(consultations, showAll = false) {
-    console.log('[DEBUG] Rendering consultations:', consultations.length, 'showAll:', showAll);
+function renderConsultations(consultations) {
+    console.log('[DEBUG] Rendering consultations:', consultations.length);
     
     const container = document.getElementById('consultations-container');
     const emptyState = document.getElementById('empty-state');
@@ -85,11 +86,9 @@ function renderConsultations(consultations, showAll = false) {
         emptyState.classList.add('hidden');
     }
     
-    // Determine how many consultations to display
-    const displayCount = showAll ? consultations.length : Math.min(2, consultations.length);
-    console.log('[DEBUG] Displaying', displayCount, 'of', consultations.length, 'consultations');
-    
-    const consultationsToRender = consultations.slice(0, displayCount);
+    // Always render a limited preview on home page
+    const consultationsToRender = consultations.slice(0, HOME_PREVIEW_LIMIT);
+    console.log('[DEBUG] Displaying', consultationsToRender.length, 'of', consultations.length, 'consultations');
     
     // Render consultation cards
     consultationsToRender.forEach((consultation, index) => {
@@ -98,11 +97,11 @@ function renderConsultations(consultations, showAll = false) {
         container.appendChild(card);
     });
     
-    // Update "View All" button visibility and text
+    // Show "View All" only when there are more records than preview limit
     if (viewAllBtn) {
-        if (consultations.length > 2) {
+        if (consultations.length > HOME_PREVIEW_LIMIT) {
             viewAllBtn.classList.remove('hidden');
-            viewAllBtn.textContent = showAll ? 'Show Less' : 'View All';
+            viewAllBtn.textContent = 'View All';
             console.log('[DEBUG] View All button visible, text:', viewAllBtn.textContent);
         } else {
             viewAllBtn.classList.add('hidden');
@@ -224,10 +223,8 @@ function getStatusBadge(status) {
  * Handle "View All" button click
  */
 function handleViewAllClick() {
-    console.log('[DEBUG] View All clicked, current isExpanded:', isExpanded);
-    isExpanded = !isExpanded;
-    console.log('[DEBUG] New isExpanded:', isExpanded);
-    renderConsultations(allConsultations, isExpanded);
+    console.log('[DEBUG] View all clicked; navigating to /consultations');
+    window.navigateWithTransition('/consultations');
 }
 
 /**
@@ -236,7 +233,7 @@ function handleViewAllClick() {
 function handleConsultationClick(consultationId) {
     console.log('[DEBUG] Consultation clicked:', consultationId);
     if (consultationId) {
-        window.location.href = `/consultation/${consultationId}`;
+        window.navigateWithTransition(`/consultation/${consultationId}`);
     }
 }
 
@@ -254,12 +251,12 @@ async function initHomePage() {
     
     // Fetch consultations
     console.log('[DEBUG] Fetching consultations...');
-    allConsultations = await fetchConsultations(10);
+    allConsultations = await fetchConsultations(HOME_FETCH_LIMIT);
     console.log('[DEBUG] Fetched consultations:', allConsultations);
     
-    // Render initial view (2 consultations)
+    // Render fixed preview on home page
     console.log('[DEBUG] Rendering initial view...');
-    renderConsultations(allConsultations, false);
+    renderConsultations(allConsultations);
     
     // Set up "View All" button event listener
     const viewAllBtn = document.getElementById('view-all-btn');
