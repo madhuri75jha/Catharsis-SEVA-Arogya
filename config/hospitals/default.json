@@ -54,7 +54,7 @@
           "required": true,
           "display_order": 5,
           "max_length": 50,
-          "description": "The unique patient identifier or medical record number. Look for phrases like 'patient ID', 'MRN', 'medical record number', 'patient number', or alphanumeric codes mentioned in patient identification. Extract the complete identifier."
+          "description": "If not mentioned please enter a random value."
         }
       ]
     },

@@ -14,6 +14,9 @@ from functools import wraps
 import os
 import json
 import logging
+from datetime import datetime, timezone
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from collections import deque
 from dotenv import load_dotenv
 
@@ -385,7 +388,10 @@ def _rebuild_consultation_transcript(consultation_id: str, user_id: str) -> str:
 @app.route('/login')
 def login():
     """Login page"""
-    return render_template('login.html')
+    return render_template(
+        'login.html',
+        google_client_id=os.getenv('GOOGLE_CLIENT_ID', '')
+    )
 
 
 @app.route('/debug/logs')
@@ -492,11 +498,23 @@ def profile_page():
     return render_template('profile.html')
 
 
-@app.route('/hospital-settings')
+@app.route('/hospitals')
 @login_required
-def hospital_settings_page():
+def hospitals_page():
+    """Hospitals list page (DeveloperAdmin only)"""
+    if session.get('user_role') != 'DeveloperAdmin':
+        return redirect(url_for('hospital_settings_page'))
+    return render_template('hospitals_list.html')
+
+
+@app.route('/hospital-settings')
+@app.route('/hospital-settings/<hospital_id>')
+@login_required
+def hospital_settings_page(hospital_id=None):
     """Hospital settings page"""
-    return render_template('hospital_settings.html')
+    if session.get('user_role') == 'DeveloperAdmin' and not hospital_id:
+        return redirect(url_for('hospitals_page'))
+    return render_template('hospital_settings.html', selected_hospital_id=hospital_id)
 
 
 @app.route('/logs')
@@ -871,12 +889,14 @@ def api_login():
             session['access_token'] = tokens['access_token']
             session['id_token'] = tokens['id_token']
             session['refresh_token'] = tokens['refresh_token']
+            session['login_at'] = datetime.now(timezone.utc).isoformat()
             
             # Get user info and sync role from Cognito
             user_info = auth_manager.validate_token(tokens['access_token'])
             if user_info:
                 attributes = user_info.get('attributes', {})
                 session['user_name'] = attributes.get('name', email.split('@')[0].title())
+                session['user_attributes'] = attributes
 
                 # Backfill legacy users missing role attributes in Cognito
                 needs_role_backfill = (
@@ -938,6 +958,89 @@ def api_login():
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
         return jsonify({'success': False, 'message': 'An error occurred during login'}), 500
+
+
+@app.route('/api/v1/auth/google', methods=['POST'])
+def api_google_login():
+    """API endpoint for Google Sign-In"""
+    logger = logging.getLogger(__name__)
+
+    try:
+        data = _get_request_data()
+        id_token = data.get('id_token', '')
+        google_client_id = os.getenv('GOOGLE_CLIENT_ID', '')
+
+        if not google_client_id:
+            return jsonify({
+                'success': False,
+                'message': 'Google login is not configured. Set GOOGLE_CLIENT_ID in environment.'
+            }), 503
+
+        if not id_token:
+            return jsonify({'success': False, 'message': 'Google ID token is required'}), 400
+
+        tokeninfo_url = "https://oauth2.googleapis.com/tokeninfo?" + urlencode({'id_token': id_token})
+        try:
+            with urlopen(tokeninfo_url, timeout=10) as response:
+                payload = json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            logger.warning(f"Google token verification failed: {str(e)}")
+            return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
+
+        audience = payload.get('aud')
+        issuer = payload.get('iss')
+        email = payload.get('email', '')
+        email_verified = str(payload.get('email_verified', 'false')).lower() == 'true'
+        expiry = payload.get('exp')
+
+        if audience != google_client_id:
+            return jsonify({'success': False, 'message': 'Invalid Google audience'}), 401
+        if issuer not in {'accounts.google.com', 'https://accounts.google.com'}:
+            return jsonify({'success': False, 'message': 'Invalid Google issuer'}), 401
+        if not email:
+            return jsonify({'success': False, 'message': 'Email not available from Google'}), 400
+        if not email_verified:
+            return jsonify({'success': False, 'message': 'Google email is not verified'}), 401
+
+        if expiry:
+            try:
+                if int(expiry) <= int(datetime.now(timezone.utc).timestamp()):
+                    return jsonify({'success': False, 'message': 'Google token expired'}), 401
+            except ValueError:
+                pass
+
+        role_query = """
+        SELECT role, hospital_id
+        FROM user_roles
+        WHERE user_id = %s
+        """
+        role_result = database_manager.execute_with_retry(role_query, (email,))
+        if not role_result:
+            return jsonify({
+                'success': False,
+                'message': 'No application account found for this Google user. Ask an administrator to register your account first.'
+            }), 403
+
+        user_role = role_result[0][0]
+        hospital_id = role_result[0][1]
+
+        session['user_id'] = email
+        session['user_name'] = payload.get('name', email.split('@')[0].title())
+        session['user_role'] = user_role
+        session['hospital_id'] = hospital_id
+        session['login_at'] = datetime.now(timezone.utc).isoformat()
+        session['user_attributes'] = {
+            'name': payload.get('name', ''),
+            'email': email,
+            'email_verified': 'true'
+        }
+
+        logger.info(f"User logged in with Google: {email} (role: {user_role})")
+        return jsonify({'success': True, 'message': 'Google login successful'})
+
+    except Exception as e:
+        logger.error(f"Google login error: {str(e)}")
+        return jsonify({'success': False, 'message': 'An error occurred during Google login'}), 500
 
 
 @app.route('/api/v1/auth/register', methods=['POST'])
@@ -1555,6 +1658,112 @@ def api_finalize_consultation(consultation_id):
         return jsonify({'success': False, 'message': 'Failed to finalize consultation'}), 500
 
 
+@app.route('/api/v1/consultations/<consultation_id>/save-and-finalize', methods=['POST'])
+@login_required
+def api_save_and_finalize_consultation(consultation_id):
+    """Save prescription for consultation and mark consultation as completed."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        data = request.get_json(silent=True) or {}
+        hospital_id = data.get('hospital_id') or session.get('hospital_id') or 'default'
+        patient_name = (data.get('patient_name') or '').strip()
+        sections = data.get('sections')
+
+        # Validate consultation ownership
+        exists = database_manager.execute_with_retry(
+            """
+            SELECT consultation_id
+            FROM consultations
+            WHERE consultation_id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+        if not exists:
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
+
+        merged_text = _rebuild_consultation_transcript(consultation_id, user_id)
+        if not merged_text or not merged_text.strip():
+            return jsonify({'success': False, 'message': 'Cannot finalize empty consultation'}), 400
+
+        if not patient_name:
+            from services.consultation_service import ConsultationService
+            patient_name = ConsultationService._extract_patient_name(merged_text, [])
+
+        # Reuse existing prescription for this consultation if one exists.
+        existing = database_manager.execute_with_retry(
+            """
+            SELECT prescription_id
+            FROM prescriptions
+            WHERE consultation_id = %s
+              AND user_id = %s
+              AND state <> 'Deleted'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (consultation_id, user_id)
+        )
+
+        if existing and len(existing) > 0:
+            prescription_id = str(existing[0][0])
+        else:
+            created = database_manager.execute_with_retry(
+                """
+                INSERT INTO prescriptions
+                (user_id, created_by_doctor_id, consultation_id, hospital_id, patient_name,
+                 state, medications, s3_key, sections, created_at)
+                VALUES (%s, %s, %s, %s, %s, 'Draft', '[]'::jsonb, '', '[]'::jsonb, CURRENT_TIMESTAMP)
+                RETURNING prescription_id
+                """,
+                (user_id, user_id, consultation_id, hospital_id, patient_name)
+            )
+            if not created or len(created) == 0:
+                return jsonify({'success': False, 'message': 'Failed to save prescription'}), 500
+            prescription_id = str(created[0][0])
+
+        # Persist edited sections from Bedrock form if provided.
+        if sections is not None:
+            database_manager.execute_with_retry(
+                """
+                UPDATE prescriptions
+                SET sections = %s::jsonb,
+                    state = CASE WHEN state = 'Draft' THEN 'InProgress' ELSE state END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE prescription_id = %s AND user_id = %s
+                """,
+                (json.dumps(sections), prescription_id, user_id)
+            )
+
+        # Finalize consultation
+        database_manager.execute_with_retry(
+            """
+            UPDATE consultations
+            SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+            WHERE consultation_id = %s AND user_id = %s
+            """,
+            (consultation_id, user_id)
+        )
+
+        logger.info(
+            f"Saved prescription {prescription_id} and finalized consultation {consultation_id} for user {user_id}"
+        )
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id,
+            'prescription_id': prescription_id,
+            'status': 'COMPLETED',
+            'redirect_url': '/thank-you'
+        })
+    except Exception as e:
+        logger.error(f"Failed to save and finalize consultation {consultation_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to save and finalize consultation'}), 500
+
+
 @app.route('/api/v1/prescriptions', methods=['POST'])
 @login_required
 def api_create_prescription():
@@ -1793,6 +2002,15 @@ def api_get_consultations():
         except ValueError:
             logger.warning(f"Non-integer limit parameter: {limit}, using default 15")
             limit = 15
+
+        # Optional server-side filters
+        search = (request.args.get('search', '') or '').strip()
+        status = (request.args.get('status', '') or '').strip().upper()
+        if status and status not in {'COMPLETED', 'IN_PROGRESS', 'FAILED'}:
+            logger.warning(f"Ignoring invalid status filter: {status}")
+            status = ''
+        start_date = (request.args.get('start_date', '') or '').strip()
+        end_date = (request.args.get('end_date', '') or '').strip()
         
         # Check if we should use mock data (for local development)
         use_mock_data = os.getenv('USE_MOCK_CONSULTATIONS', 'false').lower() == 'true'
@@ -1854,6 +2072,42 @@ def api_get_consultations():
             ]
             
             consultations = mock_consultations[:limit]
+            if search:
+                search_lower = search.lower()
+                consultations = [
+                    c for c in consultations
+                    if search_lower in str(c.get('patient_name', '')).lower()
+                    or search_lower in str(c.get('consultation_id', '')).lower()
+                    or search_lower in str(c.get('status', '')).lower()
+                    or search_lower in str(c.get('transcript_preview', '')).lower()
+                    or search_lower in str(c.get('prescription_id', '')).lower()
+                    or search_lower in str(c.get('created_at', '')).lower()
+                ]
+            if status:
+                consultations = [
+                    c for c in consultations
+                    if str(c.get('status', '')).upper() == status
+                ]
+            if start_date:
+                try:
+                    start_dt = datetime.fromisoformat(start_date)
+                    consultations = [
+                        c for c in consultations
+                        if c.get('created_at') and datetime.fromisoformat(c['created_at']) >= start_dt
+                    ]
+                except ValueError:
+                    logger.warning(f"Ignoring invalid mock start_date filter: {start_date}")
+            if end_date:
+                try:
+                    end_dt = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
+                    consultations = [
+                        c for c in consultations
+                        if c.get('created_at') and datetime.fromisoformat(c['created_at']) <= end_dt
+                    ]
+                except ValueError:
+                    logger.warning(f"Ignoring invalid mock end_date filter: {end_date}")
+
+            consultations = consultations[:limit]
             return jsonify({
                 'success': True,
                 'consultations': consultations,
@@ -1867,7 +2121,11 @@ def api_get_consultations():
         consultations = ConsultationService.get_recent_consultations(
             user_id=user_id,
             db_manager=database_manager,
-            limit=limit
+            limit=limit,
+            search=search or None,
+            status=status or None,
+            start_date=start_date or None,
+            end_date=end_date or None
         )
         
         # Return JSON response with consultation list

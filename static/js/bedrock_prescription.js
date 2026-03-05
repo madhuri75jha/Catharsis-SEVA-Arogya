@@ -498,3 +498,64 @@ function showError(message) {
     document.getElementById('formContainer').classList.add('hidden');
     document.getElementById('footerActions').classList.add('hidden');
 }
+
+/**
+ * Collect current prescription form values into section payload.
+ * Exposed globally for finalize flow in template script.
+ */
+function collectPrescriptionFormData() {
+    const payload = {
+        sections: {},
+        patient_name: ''
+    };
+
+    if (!currentConfig || !Array.isArray(currentConfig.sections)) {
+        return payload;
+    }
+
+    currentConfig.sections.forEach((section) => {
+        if (section.repeatable) {
+            const items = [];
+            const maxInstances = Math.max(repeatableSectionCounters[section.section_id] || 0, 1);
+
+            for (let index = 0; index < maxInstances; index++) {
+                const instanceEl = document.getElementById(`${section.section_id}-instance-${index}`);
+                if (!instanceEl) continue;
+
+                const item = {};
+                section.fields.forEach((field) => {
+                    const fieldId = `${section.section_id}-${index}-${field.field_name}`;
+                    const fieldEl = document.getElementById(fieldId);
+                    item[field.field_name] = fieldEl ? String(fieldEl.value || '').trim() : '';
+                });
+
+                const hasContent = Object.values(item).some((value) => String(value).length > 0);
+                if (hasContent) {
+                    items.push(item);
+                }
+            }
+            payload.sections[section.section_id] = items;
+            return;
+        }
+
+        const sectionData = {};
+        section.fields.forEach((field) => {
+            const fieldId = `${section.section_id}-${field.field_name}`;
+            const fieldEl = document.getElementById(fieldId);
+            sectionData[field.field_name] = fieldEl ? String(fieldEl.value || '').trim() : '';
+        });
+        payload.sections[section.section_id] = sectionData;
+    });
+
+    const patientSection = payload.sections.patient_details || {};
+    payload.patient_name = (
+        patientSection.patient_name ||
+        patientSection.name ||
+        patientSection.patient ||
+        ''
+    ).trim();
+
+    return payload;
+}
+
+window.collectPrescriptionFormData = collectPrescriptionFormData;

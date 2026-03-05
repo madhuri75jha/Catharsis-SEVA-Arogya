@@ -10,22 +10,21 @@ class HospitalSettingsManager {
         this.hospitalId = null;
         this.userRole = null;
         this.isDeveloperAdmin = false;
-        this.hospitals = [];
         
         this.init();
     }
     
     async init() {
         await this.fetchProfile();
-        if (this.isDeveloperAdmin) {
-            await this.fetchHospitals();
-        }
+        this.setupDeveloperNavigation();
 
         if (this.hospitalId) {
             await this.fetchHospital();
             await this.fetchDoctors();
         } else if (!this.isDeveloperAdmin) {
             this.showError('No hospital associated with your account');
+        } else {
+            window.navigateWithTransition('/hospitals');
         }
     }
     
@@ -42,38 +41,14 @@ class HospitalSettingsManager {
             this.userRole = data.profile.role;
             this.isDeveloperAdmin = this.userRole === 'DeveloperAdmin';
 
-            if (!this.isDeveloperAdmin && data.profile.hospital_id) {
+            if (this.isDeveloperAdmin) {
+                this.hospitalId = this.getHospitalIdFromPath();
+            } else if (data.profile.hospital_id) {
                 this.hospitalId = data.profile.hospital_id;
             }
         } catch (error) {
             console.error('Error fetching profile:', error);
             this.showError('Failed to load profile');
-        }
-    }
-
-    async fetchHospitals() {
-        try {
-            const response = await fetch('/api/v1/hospitals');
-            if (!response.ok) {
-                this.showError('Failed to load hospitals');
-                return;
-            }
-
-            const data = await response.json();
-            if (!data.success) {
-                this.showError(data.message || 'Failed to load hospitals');
-                return;
-            }
-
-            this.hospitals = data.hospitals || [];
-            this.renderDeveloperHospitalControls();
-
-            if (!this.hospitalId && this.hospitals.length > 0) {
-                this.hospitalId = this.hospitals[0].hospital_id;
-            }
-        } catch (error) {
-            console.error('Error fetching hospitals:', error);
-            this.showError('Failed to load hospitals');
         }
     }
     
@@ -128,10 +103,6 @@ class HospitalSettingsManager {
         // Hide loading, show content
         document.getElementById('loading-state')?.classList.add('hidden');
         document.getElementById('settings-content')?.classList.remove('hidden');
-
-        if (this.isDeveloperAdmin) {
-            this.renderDeveloperHospitalControls();
-        }
         
         // Populate form fields
         document.getElementById('hospital-name').value = this.hospital.name || '';
@@ -152,68 +123,6 @@ class HospitalSettingsManager {
         const addDoctorBtn = document.getElementById('add-doctor-btn');
         if (addDoctorBtn) {
             addDoctorBtn.onclick = () => this.showAddDoctorModal();
-        }
-    }
-
-    renderDeveloperHospitalControls() {
-        const section = document.getElementById('developer-hospital-section');
-        const selector = document.getElementById('hospital-selector');
-        const listEl = document.getElementById('hospitals-db-list');
-        const emptyEl = document.getElementById('hospitals-db-empty');
-        const countEl = document.getElementById('hospital-count');
-
-        if (!this.isDeveloperAdmin) {
-            section?.classList.add('hidden');
-            return;
-        }
-
-        section?.classList.remove('hidden');
-
-        if (countEl) {
-            countEl.textContent = String(this.hospitals.length);
-        }
-
-        if (selector) {
-            selector.innerHTML = '<option value="">Select a hospital</option>';
-            this.hospitals.forEach((hospital) => {
-                const option = document.createElement('option');
-                option.value = hospital.hospital_id;
-                option.textContent = `${hospital.name || hospital.hospital_id} (${hospital.hospital_id})`;
-                if (hospital.hospital_id === this.hospitalId) {
-                    option.selected = true;
-                }
-                selector.appendChild(option);
-            });
-
-            selector.onchange = async (event) => {
-                this.hospitalId = event.target.value || null;
-                if (!this.hospitalId) {
-                    this.showError('Please select a hospital');
-                    return;
-                }
-
-                this.showLoading();
-                await this.fetchHospital();
-                await this.fetchDoctors();
-            };
-        }
-
-        if (listEl) {
-            listEl.innerHTML = '';
-            if (this.hospitals.length === 0) {
-                emptyEl?.classList.remove('hidden');
-            } else {
-                emptyEl?.classList.add('hidden');
-                this.hospitals.forEach((hospital) => {
-                    const card = document.createElement('div');
-                    card.className = 'rounded-lg border border-slate-200 dark:border-slate-700 p-2 bg-white dark:bg-slate-900/40';
-                    card.innerHTML = `
-                        <p class="text-xs font-medium text-slate-800 dark:text-slate-200">${this.escapeHtml(hospital.name || 'Unnamed Hospital')}</p>
-                        <p class="text-[11px] text-slate-500">${this.escapeHtml(hospital.hospital_id || '')}</p>
-                    `;
-                    listEl.appendChild(card);
-                });
-            }
         }
     }
     
@@ -399,6 +308,23 @@ class HospitalSettingsManager {
         document.getElementById('loading-state')?.classList.remove('hidden');
         document.getElementById('error-state')?.classList.add('hidden');
         document.getElementById('settings-content')?.classList.add('hidden');
+    }
+
+    getHospitalIdFromPath() {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2 && parts[0] === 'hospital-settings') {
+            return decodeURIComponent(parts[1]);
+        }
+        return null;
+    }
+
+    setupDeveloperNavigation() {
+        const developerNav = document.getElementById('developer-nav');
+        if (this.isDeveloperAdmin) {
+            developerNav?.classList.remove('hidden');
+        } else {
+            developerNav?.classList.add('hidden');
+        }
     }
     
     escapeHtml(text) {

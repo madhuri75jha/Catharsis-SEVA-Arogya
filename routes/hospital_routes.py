@@ -1,9 +1,12 @@
 """Hospital and User Management API Routes"""
 import logging
 import os
+import base64
 from flask import Blueprint, request, jsonify, session
 from functools import wraps
 import json
+from datetime import datetime, timedelta, timezone
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,20 @@ def init_hospital_routes(rbac_svc, db_manager, cw_service=None):
     database_manager = db_manager
     cloudwatch_service = cw_service
     logger.info("Hospital routes initialized")
+
+
+def _decode_jwt_payload(token: str) -> dict:
+    """Decode JWT payload without signature verification for non-sensitive display metadata."""
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return {}
+        payload = parts[1]
+        payload += '=' * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload.encode('utf-8')).decode('utf-8')
+        return json.loads(decoded)
+    except Exception:
+        return {}
 
 
 def login_required(f):
@@ -344,6 +361,85 @@ def get_profile():
         """
         
         doctor_result = database_manager.execute_with_retry(doctor_query, (user_id,))
+
+        # Derive last login from Cognito token claims when available.
+        last_login_at = session.get('login_at')
+        token_claims = _decode_jwt_payload(session.get('id_token', ''))
+        auth_time = token_claims.get('auth_time')
+        if auth_time:
+            try:
+                last_login_at = datetime.fromtimestamp(int(auth_time), tz=timezone.utc).isoformat()
+            except (TypeError, ValueError):
+                pass
+
+        user_attributes = session.get('user_attributes', {}) or {}
+        email_verified = None
+        if 'email_verified' in user_attributes:
+            email_verified = str(user_attributes.get('email_verified')).lower() == 'true'
+
+        # Consultation metrics and trend for quick profile insights.
+        if user_role == 'DeveloperAdmin':
+            metrics_query = """
+            SELECT
+                COUNT(*) AS total_consultations,
+                COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed_consultations,
+                COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') AS in_progress_consultations
+            FROM consultations
+            """
+            trend_query = """
+            SELECT DATE(created_at) AS day, COUNT(*) AS count
+            FROM consultations
+            WHERE created_at >= (CURRENT_DATE - INTERVAL '6 days')
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+            """
+            metrics_result = database_manager.execute_with_retry(metrics_query)
+            trend_result = database_manager.execute_with_retry(trend_query)
+        else:
+            metrics_query = """
+            SELECT
+                COUNT(*) AS total_consultations,
+                COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed_consultations,
+                COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') AS in_progress_consultations
+            FROM consultations
+            WHERE user_id = %s
+            """
+            trend_query = """
+            SELECT DATE(created_at) AS day, COUNT(*) AS count
+            FROM consultations
+            WHERE user_id = %s
+              AND created_at >= (CURRENT_DATE - INTERVAL '6 days')
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+            """
+            metrics_result = database_manager.execute_with_retry(metrics_query, (user_id,))
+            trend_result = database_manager.execute_with_retry(trend_query, (user_id,))
+
+        total_consultations = 0
+        completed_consultations = 0
+        in_progress_consultations = 0
+        if metrics_result and len(metrics_result) > 0:
+            total_consultations = metrics_result[0][0] or 0
+            completed_consultations = metrics_result[0][1] or 0
+            in_progress_consultations = metrics_result[0][2] or 0
+
+        today = datetime.now(timezone.utc).date()
+        day_labels = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+        trend_map = {}
+        for row in trend_result or []:
+            day = row[0]
+            count = row[1] or 0
+            if hasattr(day, 'isoformat'):
+                trend_map[day.isoformat()] = int(count)
+
+        consultation_trend = [
+            {
+                'date': day.isoformat(),
+                'label': day.strftime('%a'),
+                'count': trend_map.get(day.isoformat(), 0)
+            }
+            for day in day_labels
+        ]
         
         profile = {
             'user_id': user_id,
@@ -351,7 +447,15 @@ def get_profile():
             'role': user_role,
             'role_display': format_role_display(user_role),
             'hospital_id': user_hospital,
-            'menu_items': rbac_service.get_sidebar_menu_items(user_role)
+            'menu_items': rbac_service.get_sidebar_menu_items(user_role),
+            'last_login_at': last_login_at,
+            'email_verified': email_verified,
+            'metrics': {
+                'total_consultations': int(total_consultations),
+                'completed_consultations': int(completed_consultations),
+                'in_progress_consultations': int(in_progress_consultations),
+                'consultation_trend_last_7_days': consultation_trend
+            }
         }
         
         if doctor_result:
@@ -439,9 +543,36 @@ def get_logs():
         
         return jsonify(result)
         
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        error_message = e.response.get('Error', {}).get('Message', 'CloudWatch client error')
+        logger.error(f"CloudWatch API error while fetching logs: {error_code} - {error_message}")
+
+        status = 500
+        user_message = f"CloudWatch error: {error_code}"
+        if error_code in {'AccessDeniedException', 'UnauthorizedOperation'}:
+            status = 403
+            user_message = "CloudWatch access denied for ECS task role"
+        elif error_code in {'ResourceNotFoundException'}:
+            status = 404
+            user_message = "Configured CloudWatch log group was not found"
+        elif error_code in {'InvalidParameterException', 'InvalidParameterValueException'}:
+            status = 400
+            user_message = "Invalid CloudWatch logs query parameters"
+
+        return jsonify({
+            'success': False,
+            'message': user_message,
+            'error_code': error_code,
+            'error_detail': error_message
+        }), status
     except Exception as e:
-        logger.error(f"Failed to get logs: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to retrieve logs'}), 500
+        logger.error(f"Failed to get logs: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve logs',
+            'error_detail': str(e)
+        }), 500
 
 
 # Thank You Page Route

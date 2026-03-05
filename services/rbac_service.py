@@ -27,7 +27,7 @@ class RBACService:
         'DeveloperAdmin': [
             {'label': 'Home', 'icon': 'home', 'route': '/home'},
             {'label': 'All Consultations', 'icon': 'description', 'route': '/consultations'},
-            {'label': 'Hospital Settings', 'icon': 'local_hospital', 'route': '/hospital-settings'},
+            {'label': 'Hospitals', 'icon': 'local_hospital', 'route': '/hospitals'},
             {'label': 'CloudWatch Logs', 'icon': 'article', 'route': '/logs'},
             {'label': 'Profile', 'icon': 'person', 'route': '/profile'}
         ]

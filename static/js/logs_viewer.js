@@ -101,12 +101,19 @@ class LogsViewerManager {
             const response = await fetch(`/api/v1/logs?${params.toString()}`);
             
             if (!response.ok) {
+                let errorPayload = null;
+                try {
+                    errorPayload = await response.json();
+                } catch (e) {
+                    errorPayload = null;
+                }
+
                 if (response.status === 403) {
-                    this.showError('You do not have permission to view logs');
+                    this.showError(errorPayload?.message || 'You do not have permission to view logs');
                 } else if (response.status === 503) {
-                    this.showError('CloudWatch service not configured');
+                    this.showError(errorPayload?.message || 'CloudWatch service not configured');
                 } else {
-                    this.showError(`HTTP error! status: ${response.status}`);
+                    this.showError(errorPayload?.message || `HTTP error! status: ${response.status}`);
                 }
                 return;
             }

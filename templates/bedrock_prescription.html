@@ -147,19 +147,30 @@
         try {
             const urlParams = new URLSearchParams(window.location.search);
             const consultationId = urlParams.get('consultation_id') || sessionStorage.getItem('consultationId');
+            const hospitalId = urlParams.get('hospital_id') || 'default';
+            const formData = typeof window.collectPrescriptionFormData === 'function'
+                ? window.collectPrescriptionFormData()
+                : { sections: {}, patient_name: '' };
 
-            if (consultationId) {
-                const res = await fetch(`/api/v1/consultations/${consultationId}/finalize`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const data = await res.json();
-                if (!res.ok || !data.success) {
-                    throw new Error(data.message || 'Failed to finalize consultation');
-                }
+            if (!consultationId) {
+                throw new Error('Missing consultation_id in URL');
             }
 
-            alert('Prescription finalized.');
+            const res = await fetch(`/api/v1/consultations/${consultationId}/save-and-finalize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hospital_id: hospitalId,
+                    patient_name: formData.patient_name,
+                    sections: formData.sections
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Failed to save and finalize consultation');
+            }
+
+            window.navigateWithTransition(data.redirect_url || '/thank-you');
         } catch (error) {
             console.error('Finalize failed:', error);
             alert(`Failed to finalize: ${error.message}`);

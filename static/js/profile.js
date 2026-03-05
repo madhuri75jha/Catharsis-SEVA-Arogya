@@ -64,6 +64,30 @@ class ProfileManager {
         if (roleEl) {
             roleEl.textContent = this.profile.role_display || this.profile.role || 'Unknown';
         }
+
+        // Last login and email verification
+        const lastLoginEl = document.getElementById('profile-last-login');
+        if (lastLoginEl) {
+            lastLoginEl.textContent = this.formatDateTime(this.profile.last_login_at);
+        }
+
+        const emailVerifiedEl = document.getElementById('profile-email-verified');
+        if (emailVerifiedEl) {
+            if (this.profile.email_verified === true) {
+                emailVerifiedEl.textContent = 'Yes';
+            } else if (this.profile.email_verified === false) {
+                emailVerifiedEl.textContent = 'No';
+            } else {
+                emailVerifiedEl.textContent = 'Unavailable';
+            }
+        }
+
+        // Consultation metrics
+        const metrics = this.profile.metrics || {};
+        this.setText('metric-total', metrics.total_consultations ?? 0);
+        this.setText('metric-completed', metrics.completed_consultations ?? 0);
+        this.setText('metric-in-progress', metrics.in_progress_consultations ?? 0);
+        this.renderActivityChart(metrics.consultation_trend_last_7_days || []);
         
         // Specialty (if available)
         if (this.profile.specialty) {
@@ -124,7 +148,70 @@ class ProfileManager {
         if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
         return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
     }
-    
+
+    setText(elementId, value) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.textContent = String(value);
+        }
+    }
+
+    formatDateTime(value) {
+        if (!value) return 'Unavailable';
+        try {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'Unavailable';
+            return date.toLocaleString([], {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            return 'Unavailable';
+        }
+    }
+
+    renderActivityChart(points) {
+        const chartEl = document.getElementById('profile-activity-chart');
+        if (!chartEl) return;
+
+        const data = Array.isArray(points) && points.length > 0
+            ? points
+            : [
+                { label: 'Mon', count: 0 },
+                { label: 'Tue', count: 0 },
+                { label: 'Wed', count: 0 },
+                { label: 'Thu', count: 0 },
+                { label: 'Fri', count: 0 },
+                { label: 'Sat', count: 0 },
+                { label: 'Sun', count: 0 }
+            ];
+
+        const maxCount = Math.max(...data.map((item) => Number(item.count || 0)), 1);
+        chartEl.innerHTML = '';
+
+        data.forEach((item) => {
+            const value = Number(item.count || 0);
+            const barHeight = Math.max((value / maxCount) * 72, value > 0 ? 8 : 2);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex-1 min-w-0 flex flex-col items-center justify-end';
+            wrapper.innerHTML = `
+                <span class="text-[10px] text-slate-500 mb-1">${value}</span>
+                <div class="w-full rounded-t-md bg-primary/80" style="height:${barHeight}px"></div>
+                <span class="text-[10px] text-slate-400 mt-1">${this.escapeHtml(item.label || '')}</span>
+            `;
+            chartEl.appendChild(wrapper);
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 }
 
 // Initialize when DOM is ready

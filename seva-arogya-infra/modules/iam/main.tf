@@ -241,3 +241,24 @@ resource "aws_iam_role_policy" "ecs_task_exec" {
     ]
   })
 }
+
+# ECS Task Role Policy - CloudWatch Logs Read (for in-app logs viewer)
+resource "aws_iam_role_policy" "ecs_task_cloudwatch_read" {
+  name = "cloudwatch-logs-read"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

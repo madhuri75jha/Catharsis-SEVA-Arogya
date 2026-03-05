@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}SEVA Arogya - Hospitals{% endblock %}
+
+{% block content %}
+<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+    <div class="px-6 pt-12 pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center justify-between">
+            <button onclick="window.navigateWithTransition('/home')" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold text-slate-800 dark:text-white">Hospitals</h1>
+            <div class="w-10"></div>
+        </div>
+        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Select a hospital to manage settings and doctors.</p>
+    </div>
+
+    <div class="px-6 py-3 border-b border-slate-100 dark:border-slate-800">
+        <input id="hospital-search" type="text" class="ios-input" placeholder="Search hospital name or ID" />
+    </div>
+
+    <div id="loading-state" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p class="mt-2 text-sm text-slate-500">Loading hospitals...</p>
+        </div>
+    </div>
+
+    <div id="error-state" class="hidden flex-1 flex items-center justify-center">
+        <div class="text-center px-6">
+            <span class="material-symbols-outlined text-[64px] text-red-300 dark:text-red-700">error</span>
+            <p id="error-message" class="mt-2 text-sm text-red-500">Failed to load hospitals</p>
+        </div>
+    </div>
+
+    <div id="hospitals-content" class="hidden flex-1 overflow-y-auto px-6 py-4">
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+            <span id="hospital-count">0</span> hospitals found
+        </p>
+
+        <div id="hospitals-list" class="space-y-2"></div>
+
+        <div id="hospitals-empty" class="hidden text-center py-10">
+            <span class="material-symbols-outlined text-[48px] text-slate-300 dark:text-slate-700">local_hospital</span>
+            <p class="mt-2 text-sm text-slate-500">No hospitals found</p>
+        </div>
+    </div>
+
+    <div class="pb-4 flex justify-center">
+        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/hospitals_list.js') }}"></script>
+{% endblock %}

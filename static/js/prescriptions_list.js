@@ -21,8 +21,6 @@ class DebouncedSearch {
 class ConsultationsListManager {
     constructor() {
         this.consultations = [];
-        this.filteredConsultations = [];
-        this.defaultDisplayLimit = 15;
         this.fetchLimit = 50;
         this.filters = {
             search: '',
@@ -31,9 +29,9 @@ class ConsultationsListManager {
             endDate: ''
         };
 
-        this.debouncedSearch = new DebouncedSearch((value) => {
+        this.debouncedFetch = new DebouncedSearch((value) => {
             this.filters.search = value;
-            this.applyFiltersAndRender();
+            this.fetchConsultations();
         }, 300);
 
         this.init();
@@ -49,7 +47,7 @@ class ConsultationsListManager {
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-                this.debouncedSearch.execute(e.target.value);
+                this.debouncedFetch.execute(e.target.value);
             });
         }
 
@@ -57,7 +55,7 @@ class ConsultationsListManager {
         if (statusFilter) {
             statusFilter.addEventListener('change', (e) => {
                 this.filters.status = e.target.value;
-                this.applyFiltersAndRender();
+                this.fetchConsultations();
             });
         }
 
@@ -65,7 +63,7 @@ class ConsultationsListManager {
         if (startDateFilter) {
             startDateFilter.addEventListener('change', (e) => {
                 this.filters.startDate = e.target.value;
-                this.applyFiltersAndRender();
+                this.fetchConsultations();
             });
         }
 
@@ -73,7 +71,7 @@ class ConsultationsListManager {
         if (endDateFilter) {
             endDateFilter.addEventListener('change', (e) => {
                 this.filters.endDate = e.target.value;
-                this.applyFiltersAndRender();
+                this.fetchConsultations();
             });
         }
     }
@@ -104,7 +102,19 @@ class ConsultationsListManager {
         try {
             this.showLoading();
 
-            const response = await fetch(`/api/consultations?limit=${this.fetchLimit}`);
+            const hasFilters = Boolean(
+                this.filters.search || this.filters.status || this.filters.startDate || this.filters.endDate
+            );
+            const limit = hasFilters ? this.fetchLimit : 15;
+
+            const params = new URLSearchParams();
+            params.set('limit', String(limit));
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.status) params.set('status', this.filters.status);
+            if (this.filters.startDate) params.set('start_date', this.filters.startDate);
+            if (this.filters.endDate) params.set('end_date', this.filters.endDate);
+
+            const response = await fetch(`/api/consultations?${params.toString()}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -112,7 +122,7 @@ class ConsultationsListManager {
             const data = await response.json();
             if (data.success) {
                 this.consultations = data.consultations || [];
-                this.applyFiltersAndRender();
+                this.renderConsultations();
             } else {
                 this.showError(data.error || 'Failed to load consultations');
             }
@@ -120,43 +130,6 @@ class ConsultationsListManager {
             console.error('Error fetching consultations:', error);
             this.showError('An error occurred while loading consultations');
         }
-    }
-
-    applyFiltersAndRender() {
-        const hasAnyFilter = Boolean(
-            this.filters.search || this.filters.status || this.filters.startDate || this.filters.endDate
-        );
-
-        const searchLower = this.filters.search.trim().toLowerCase();
-        let filtered = [...this.consultations];
-
-        if (searchLower) {
-            filtered = filtered.filter((c) => {
-                const patient = (c.patient_name || '').toLowerCase();
-                const consultationId = String(c.consultation_id || '').toLowerCase();
-                return patient.includes(searchLower) || consultationId.includes(searchLower);
-            });
-        }
-
-        if (this.filters.status) {
-            filtered = filtered.filter((c) => (c.status || '').toUpperCase() === this.filters.status.toUpperCase());
-        }
-
-        if (this.filters.startDate) {
-            const start = new Date(`${this.filters.startDate}T00:00:00`);
-            filtered = filtered.filter((c) => c.created_at && new Date(c.created_at) >= start);
-        }
-
-        if (this.filters.endDate) {
-            const end = new Date(`${this.filters.endDate}T23:59:59`);
-            filtered = filtered.filter((c) => c.created_at && new Date(c.created_at) <= end);
-        }
-
-        this.filteredConsultations = hasAnyFilter
-            ? filtered
-            : filtered.slice(0, this.defaultDisplayLimit);
-
-        this.renderConsultations();
     }
 
     renderConsultations() {
@@ -167,7 +140,7 @@ class ConsultationsListManager {
 
         if (loadingState) loadingState.classList.add('hidden');
 
-        if (this.filteredConsultations.length === 0) {
+        if (this.consultations.length === 0) {
             if (container) container.classList.add('hidden');
             if (emptyState) emptyState.classList.remove('hidden');
             return;
@@ -178,7 +151,7 @@ class ConsultationsListManager {
 
         if (tbody) {
             tbody.innerHTML = '';
-            this.filteredConsultations.forEach((consultation) => {
+            this.consultations.forEach((consultation) => {
                 const row = this.createConsultationRow(consultation);
                 tbody.appendChild(row);
             });
