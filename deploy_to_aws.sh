@@ -102,6 +102,35 @@ SERVICE_NAME="$(terraform output -raw ecs_service_name)"
 popd >/dev/null
 
 echo ""
+echo "==> Draining ECS service before deploying new image"
+CURRENT_DESIRED_COUNT="$(aws ecs describe-services \
+  --cluster "$CLUSTER_NAME" \
+  --services "$SERVICE_NAME" \
+  --region "$AWS_REGION" \
+  --query 'services[0].desiredCount' \
+  --output text 2>/dev/null || echo 1)"
+
+if ! [[ "$CURRENT_DESIRED_COUNT" =~ ^[0-9]+$ ]]; then
+  CURRENT_DESIRED_COUNT=1
+fi
+
+DEPLOY_DESIRED_COUNT="${DEPLOY_DESIRED_COUNT:-$CURRENT_DESIRED_COUNT}"
+if ! [[ "$DEPLOY_DESIRED_COUNT" =~ ^[0-9]+$ ]] || [ "$DEPLOY_DESIRED_COUNT" -lt 1 ]; then
+  DEPLOY_DESIRED_COUNT=1
+fi
+
+aws ecs update-service \
+  --cluster "$CLUSTER_NAME" \
+  --service "$SERVICE_NAME" \
+  --desired-count 0 \
+  --region "$AWS_REGION" >/dev/null
+
+aws ecs wait services-stable \
+  --cluster "$CLUSTER_NAME" \
+  --services "$SERVICE_NAME" \
+  --region "$AWS_REGION"
+
+echo ""
 echo "==> Docker build/tag/push"
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_URL"
 docker build -t seva-arogya-backend "$ROOT_DIR"
@@ -118,12 +147,26 @@ terraform apply \
 popd >/dev/null
 
 echo ""
+echo "==> Restoring ECS desired count to ${DEPLOY_DESIRED_COUNT}"
+aws ecs update-service \
+  --cluster "$CLUSTER_NAME" \
+  --service "$SERVICE_NAME" \
+  --desired-count "$DEPLOY_DESIRED_COUNT" \
+  --region "$AWS_REGION" >/dev/null
+
+echo ""
 echo "==> Force ECS deployment"
 aws ecs update-service \
   --cluster "$CLUSTER_NAME" \
   --service "$SERVICE_NAME" \
   --force-new-deployment \
   --region "$AWS_REGION" >/dev/null
+
+echo "==> Waiting for ECS service to become stable"
+aws ecs wait services-stable \
+  --cluster "$CLUSTER_NAME" \
+  --services "$SERVICE_NAME" \
+  --region "$AWS_REGION"
 
 echo ""
 echo "Deployment complete."
