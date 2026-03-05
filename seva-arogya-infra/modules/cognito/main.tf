@@ -33,6 +33,32 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  schema {
+    name                     = "role"
+    attribute_data_type      = "String"
+    developer_only_attribute = false
+    mutable                  = true
+    required                 = false
+
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 64
+    }
+  }
+
+  schema {
+    name                     = "hospital_id"
+    attribute_data_type      = "String"
+    developer_only_attribute = false
+    mutable                  = true
+    required                 = false
+
+    string_attribute_constraints {
+      min_length = 0
+      max_length = 128
+    }
+  }
+
   tags = {
     Name        = var.user_pool_name
     Project     = var.project_name
@@ -59,6 +85,20 @@ resource "aws_cognito_user_pool_client" "main" {
     "ALLOW_USER_PASSWORD_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH",
     "ALLOW_USER_SRP_AUTH"
+  ]
+
+  read_attributes = [
+    "email",
+    "name",
+    "custom:role",
+    "custom:hospital_id"
+  ]
+
+  write_attributes = [
+    "email",
+    "name",
+    "custom:role",
+    "custom:hospital_id"
   ]
 
   prevent_user_existence_errors = "ENABLED"

@@ -2,28 +2,6 @@
 let currentUserRole = null;
 let currentUserProfile = null;
 
-// Menu items by role
-const MENU_ITEMS = {
-    Doctor: [
-        { icon: 'home', label: 'Home', path: '/' },
-        { icon: 'description', label: 'My Prescriptions', path: '/prescriptions' },
-        { icon: 'person', label: 'Profile', path: '/profile' }
-    ],
-    HospitalAdmin: [
-        { icon: 'home', label: 'Home', path: '/' },
-        { icon: 'description', label: 'Prescriptions', path: '/prescriptions' },
-        { icon: 'local_hospital', label: 'Hospital Settings', path: '/hospital-settings' },
-        { icon: 'person', label: 'Profile', path: '/profile' }
-    ],
-    DeveloperAdmin: [
-        { icon: 'home', label: 'Home', path: '/' },
-        { icon: 'description', label: 'All Prescriptions', path: '/prescriptions' },
-        { icon: 'local_hospital', label: 'Hospital Settings', path: '/hospital-settings' },
-        { icon: 'article', label: 'CloudWatch Logs', path: '/logs' },
-        { icon: 'person', label: 'Profile', path: '/profile' }
-    ]
-};
-
 // Open sidebar (mobile)
 function openSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -70,30 +48,33 @@ async function fetchUserProfile() {
     }
 }
 
-// Render menu items based on role
-function renderMenuItems(role) {
+// Render menu items returned by backend RBAC profile
+function renderMenuItems(menuItems) {
     const menuContainer = document.getElementById('sidebar-menu');
     if (!menuContainer) return;
-    
-    const menuItems = MENU_ITEMS[role] || MENU_ITEMS.Doctor;
+
+    const items = Array.isArray(menuItems) ? menuItems : [];
     const currentPath = window.location.pathname;
-    
+
     let menuHTML = '<ul class="space-y-1">';
-    
-    menuItems.forEach(item => {
-        const isActive = currentPath === item.path || 
-                        (item.path !== '/' && currentPath.startsWith(item.path));
-        
+
+    items.forEach(item => {
+        const path = item.route || item.path || '#';
+        const label = item.label || 'Menu';
+        const icon = item.icon || 'menu';
+        const isActive = currentPath === path ||
+                        (path !== '/' && currentPath.startsWith(path));
+
         menuHTML += `
             <li>
-                <a href="${item.path}" 
+                <a href="${path}" 
                    class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                        isActive 
                            ? 'bg-primary/10 text-primary' 
                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                    }">
-                    <span class="material-symbols-outlined text-[20px]">${item.icon}</span>
-                    <span class="text-sm font-medium">${item.label}</span>
+                    <span class="material-symbols-outlined text-[20px]">${icon}</span>
+                    <span class="text-sm font-medium">${label}</span>
                 </a>
             </li>
         `;
@@ -112,14 +93,8 @@ function renderUserProfile(profile) {
         nameElement.textContent = profile.name;
     }
     
-    if (roleElement && profile.role) {
-        // Format role for display
-        const roleDisplay = profile.role === 'DeveloperAdmin' 
-            ? 'Developer Admin' 
-            : profile.role === 'HospitalAdmin' 
-                ? 'Hospital Admin' 
-                : profile.role;
-        roleElement.textContent = roleDisplay;
+    if (roleElement && (profile.role_display || profile.role)) {
+        roleElement.textContent = profile.role_display || profile.role;
     }
 }
 
@@ -128,17 +103,16 @@ async function initializeSidebar() {
     const profile = await fetchUserProfile();
     
     if (profile) {
-        renderMenuItems(profile.role);
+        renderMenuItems(profile.menu_items);
         renderUserProfile(profile);
     } else {
-        // Fallback to default menu if profile fetch fails
-        renderMenuItems('Doctor');
+        renderMenuItems([]);
         
         const nameElement = document.getElementById('sidebar-user-name');
         const roleElement = document.getElementById('sidebar-user-role');
         
         if (nameElement) nameElement.textContent = 'User';
-        if (roleElement) roleElement.textContent = 'Doctor';
+        if (roleElement) roleElement.textContent = 'Unknown';
     }
 }
 

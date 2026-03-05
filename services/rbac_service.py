@@ -15,23 +15,21 @@ class RBACService:
     SIDEBAR_MENUS = {
         'Doctor': [
             {'label': 'Home', 'icon': 'home', 'route': '/home'},
-            {'label': 'Create Prescription', 'icon': 'add_circle', 'route': '/transcription'},
-            {'label': 'Prescriptions', 'icon': 'description', 'route': '/prescriptions'},
-            {'label': 'Profile', 'icon': 'person', 'route': '/profile'},
-            {'label': 'Dashboard', 'icon': 'dashboard', 'route': '/dashboard'}
+            {'label': 'My Prescriptions', 'icon': 'description', 'route': '/prescriptions'},
+            {'label': 'Profile', 'icon': 'person', 'route': '/profile'}
         ],
         'HospitalAdmin': [
             {'label': 'Home', 'icon': 'home', 'route': '/home'},
-            {'label': 'Create Prescription', 'icon': 'add_circle', 'route': '/transcription'},
             {'label': 'Prescriptions', 'icon': 'description', 'route': '/prescriptions'},
-            {'label': 'Profile', 'icon': 'person', 'route': '/profile'},
-            {'label': 'Dashboard', 'icon': 'dashboard', 'route': '/dashboard'},
-            {'label': 'Hospital Settings', 'icon': 'settings', 'route': '/hospital-settings'}
+            {'label': 'Hospital Settings', 'icon': 'local_hospital', 'route': '/hospital-settings'},
+            {'label': 'Profile', 'icon': 'person', 'route': '/profile'}
         ],
         'DeveloperAdmin': [
-            {'label': 'Prescriptions', 'icon': 'description', 'route': '/prescriptions'},
-            {'label': 'Hospitals CRUD', 'icon': 'business', 'route': '/hospitals'},
-            {'label': 'CloudWatch Logs', 'icon': 'bug_report', 'route': '/logs'}
+            {'label': 'Home', 'icon': 'home', 'route': '/home'},
+            {'label': 'All Prescriptions', 'icon': 'description', 'route': '/prescriptions'},
+            {'label': 'Hospital Settings', 'icon': 'local_hospital', 'route': '/hospital-settings'},
+            {'label': 'CloudWatch Logs', 'icon': 'article', 'route': '/logs'},
+            {'label': 'Profile', 'icon': 'person', 'route': '/profile'}
         ]
     }
     
@@ -64,11 +62,11 @@ class RBACService:
             result = self.db.execute_with_retry(query, (user_id,))
             if result and len(result) > 0:
                 return result[0][0]
-            # Default to Doctor if no role found
+            # Safe fallback for stale users without a row; login flow now blocks this case.
             return 'Doctor'
         except Exception as e:
             logger.error(f"Failed to get user role: {str(e)}")
-            return 'Doctor'  # Default fallback
+            return 'Doctor'
     
     def get_user_hospital(self, user_id: str) -> Optional[str]:
         """
@@ -106,8 +104,16 @@ class RBACService:
         Returns:
             True if successful, False otherwise
         """
-        role = cognito_attributes.get('custom:role', 'Doctor')
+        role = cognito_attributes.get('custom:role')
         hospital_id = cognito_attributes.get('custom:hospital_id')
+
+        if role not in self.ROLES:
+            logger.error(f"Cannot sync role for {user_id}: invalid or missing role '{role}'")
+            return False
+
+        if role in ['Doctor', 'HospitalAdmin'] and not hospital_id:
+            logger.error(f"Cannot sync role for {user_id}: missing hospital_id for role '{role}'")
+            return False
         
         query = """
         INSERT INTO user_roles (user_id, role, hospital_id)

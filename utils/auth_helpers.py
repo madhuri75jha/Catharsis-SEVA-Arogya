@@ -10,6 +10,18 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+VALID_ROLES = {'Doctor', 'HospitalAdmin', 'DeveloperAdmin'}
+
+
+def format_role_display(role: Optional[str]) -> str:
+    """Convert internal role names to UI-friendly labels."""
+    role_map = {
+        'Doctor': 'Doctor',
+        'HospitalAdmin': 'Hospital Admin',
+        'DeveloperAdmin': 'Developer Admin'
+    }
+    return role_map.get(role, role or 'Unknown')
+
 
 def sync_user_role_from_cognito(database_manager, user_info: Dict[str, Any], user_id: str) -> Optional[str]:
     """
@@ -34,16 +46,17 @@ def sync_user_role_from_cognito(database_manager, user_info: Dict[str, Any], use
         role = attributes.get('custom:role')
         hospital_id = attributes.get('custom:hospital_id')
         
-        # Default to Doctor role if not specified
         if not role:
-            logger.warning(f"No custom:role attribute found for user {user_id}, defaulting to Doctor")
-            role = 'Doctor'
-        
-        # Validate role
-        valid_roles = ['Doctor', 'HospitalAdmin', 'DeveloperAdmin']
-        if role not in valid_roles:
-            logger.error(f"Invalid role '{role}' for user {user_id}, defaulting to Doctor")
-            role = 'Doctor'
+            logger.error(f"Missing required custom:role attribute for user {user_id}")
+            return None
+
+        if role not in VALID_ROLES:
+            logger.error(f"Invalid role '{role}' for user {user_id}")
+            return None
+
+        if role in {'Doctor', 'HospitalAdmin'} and not hospital_id:
+            logger.error(f"Missing required custom:hospital_id for user {user_id} with role {role}")
+            return None
         
         # Upsert to user_roles table
         conn = database_manager.get_connection()

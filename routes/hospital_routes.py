@@ -332,6 +332,7 @@ def get_profile():
         user_id = session.get('user_id')
         user_role = rbac_service.get_user_role(user_id)
         user_hospital = rbac_service.get_user_hospital(user_id)
+        from utils.auth_helpers import format_role_display
         
         # Get doctor info
         doctor_query = """
@@ -347,7 +348,9 @@ def get_profile():
             'user_id': user_id,
             'email': session.get('user_id'),  # Assuming user_id is email
             'role': user_role,
-            'hospital_id': user_hospital
+            'role_display': format_role_display(user_role),
+            'hospital_id': user_hospital,
+            'menu_items': rbac_service.get_sidebar_menu_items(user_role)
         }
         
         if doctor_result:

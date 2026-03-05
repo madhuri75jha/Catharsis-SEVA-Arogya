@@ -814,25 +814,31 @@ def api_login():
             # Get user info and sync role from Cognito
             user_info = auth_manager.validate_token(tokens['access_token'])
             if user_info:
-                session['user_name'] = user_info['attributes'].get('name', email.split('@')[0].title())
-                
+                attributes = user_info.get('attributes', {})
+                session['user_name'] = attributes.get('name', email.split('@')[0].title())
+
                 # Sync user role from Cognito to database
                 from utils.auth_helpers import sync_user_role_from_cognito
                 user_role = sync_user_role_from_cognito(database_manager, user_info, email)
-                
+
                 if user_role:
                     session['user_role'] = user_role
-                    # Also store hospital_id if present
-                    hospital_id = user_info['attributes'].get('custom:hospital_id')
-                    if hospital_id:
-                        session['hospital_id'] = hospital_id
+                    hospital_id = attributes.get('custom:hospital_id')
+                    session['hospital_id'] = hospital_id
                 else:
-                    # Fallback to Doctor role if sync fails
-                    session['user_role'] = 'Doctor'
-                    logger.warning(f"Role sync failed for {email}, defaulting to Doctor")
+                    session.clear()
+                    logger.warning(f"Login blocked for {email}: missing or invalid Cognito role attributes")
+                    return jsonify({
+                        'success': False,
+                        'message': 'Account role configuration is missing or invalid. Contact your administrator.'
+                    }), 403
             else:
-                session['user_name'] = email.split('@')[0].title()
-                session['user_role'] = 'Doctor'  # Default role
+                session.clear()
+                logger.warning(f"Login blocked for {email}: unable to fetch Cognito user attributes")
+                return jsonify({
+                    'success': False,
+                    'message': 'Unable to validate user profile from Cognito. Please try again.'
+                }), 401
             
             logger.info(f"User logged in successfully: {email} (role: {session.get('user_role')})")
             return jsonify({'success': True, 'message': 'Login successful'})
@@ -857,14 +863,32 @@ def api_register():
         email = data.get('email', '')
         password = data.get('password', '')
         name = data.get('name', '')
-        
-        if not email or not password:
-            return jsonify({'success': False, 'message': 'Email and password required'}), 400
-        
+        role = data.get('role', '')
+        hospital_id = data.get('hospital_id', '')
+
+        if not email or not password or not role:
+            return jsonify({'success': False, 'message': 'Email, password, and role are required'}), 400
+
+        from utils.validation import validate_user_role
+        role_valid, role_error = validate_user_role(role)
+        if not role_valid:
+            return jsonify({'success': False, 'message': role_error}), 400
+
+        if role in ['Doctor', 'HospitalAdmin'] and not hospital_id:
+            return jsonify({
+                'success': False,
+                'message': 'hospital_id is required for Doctor and HospitalAdmin users'
+            }), 400
+
+        if role == 'DeveloperAdmin' and not hospital_id:
+            hospital_id = 'default'
+
         # Register with Cognito
         attributes = {}
         if name:
             attributes['name'] = name
+        attributes['custom:role'] = role
+        attributes['custom:hospital_id'] = hospital_id
         
         result = auth_manager.register(email, password, attributes)
         

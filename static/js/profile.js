@@ -62,7 +62,7 @@ class ProfileManager {
         // Role
         const roleEl = document.getElementById('profile-role');
         if (roleEl) {
-            roleEl.textContent = this.formatRole(this.profile.role);
+            roleEl.textContent = this.profile.role_display || this.profile.role || 'Unknown';
         }
         
         // Specialty (if available)
@@ -125,14 +125,6 @@ class ProfileManager {
         return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
     }
     
-    formatRole(role) {
-        const roleMap = {
-            'Doctor': 'Doctor',
-            'HospitalAdmin': 'Hospital Admin',
-            'DeveloperAdmin': 'Developer Admin'
-        };
-        return roleMap[role] || role;
-    }
 }
 
 // Initialize when DOM is ready
