@@ -176,7 +176,7 @@ module "alb" {
   public_subnet_ids = module.vpc.public_subnet_ids
   enable_https      = var.enable_https
   certificate_arn   = var.certificate_arn != "" ? var.certificate_arn : try(aws_acm_certificate.alb[0].arn, "")
-  health_check_path = "/health"
+  health_check_path = "/health/live"
   target_port       = local.container_port
   project_name      = var.project_name
   env_name          = var.env_name

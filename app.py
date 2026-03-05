@@ -817,6 +817,32 @@ def api_login():
                 attributes = user_info.get('attributes', {})
                 session['user_name'] = attributes.get('name', email.split('@')[0].title())
 
+                # Backfill legacy users missing role attributes in Cognito
+                needs_role_backfill = (
+                    not attributes.get('custom:role') or
+                    (
+                        attributes.get('custom:role') in ['Doctor', 'HospitalAdmin'] and
+                        not attributes.get('custom:hospital_id')
+                    )
+                )
+                if needs_role_backfill:
+                    updated_attributes = auth_manager.ensure_role_attributes(
+                        tokens['access_token'],
+                        attributes,
+                        default_role='Doctor',
+                        default_hospital_id='default'
+                    )
+                    if updated_attributes:
+                        attributes = updated_attributes
+                        user_info['attributes'] = updated_attributes
+                    else:
+                        session.clear()
+                        logger.warning(f"Login blocked for {email}: failed to auto-backfill role attributes")
+                        return jsonify({
+                            'success': False,
+                            'message': 'Account role setup failed. Contact your administrator.'
+                        }), 403
+
                 # Sync user role from Cognito to database
                 from utils.auth_helpers import sync_user_role_from_cognito
                 user_role = sync_user_role_from_cognito(database_manager, user_info, email)
@@ -1847,6 +1873,17 @@ def aws_connectivity_check():
             'message': f'Connectivity check failed: {str(e)}',
             'timestamp': time.time()
         }), 503
+
+
+# Health check endpoint
+@app.route('/health/live', methods=['GET'])
+def health_live():
+    """Lightweight liveness endpoint for ECS/ALB health checks"""
+    import time
+    return jsonify({
+        'status': 'alive',
+        'timestamp': time.time()
+    }), 200
 
 
 # Health check endpoint

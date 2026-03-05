@@ -446,3 +446,58 @@ class AuthManager(BaseAWSClient):
         except Exception as e:
             logger.error(f"Unexpected error during token validation: {str(e)}")
             return None
+
+    def ensure_role_attributes(
+        self,
+        access_token: str,
+        current_attributes: Dict[str, str],
+        default_role: str = 'Doctor',
+        default_hospital_id: str = 'default'
+    ) -> Optional[Dict[str, str]]:
+        """
+        Backfill missing role-related Cognito custom attributes for legacy users.
+
+        Args:
+            access_token: User access token
+            current_attributes: Current Cognito user attributes
+            default_role: Role to set if custom:role is missing
+            default_hospital_id: Hospital ID to set for doctor/admin roles when missing
+
+        Returns:
+            Updated attributes dictionary or None if update failed.
+        """
+        try:
+            role = current_attributes.get('custom:role')
+            hospital_id = current_attributes.get('custom:hospital_id')
+            updates = []
+
+            if not role:
+                updates.append({'Name': 'custom:role', 'Value': default_role})
+                role = default_role
+
+            if role in ['Doctor', 'HospitalAdmin'] and not hospital_id:
+                updates.append({'Name': 'custom:hospital_id', 'Value': default_hospital_id})
+                hospital_id = default_hospital_id
+
+            if updates:
+                self.client.update_user_attributes(
+                    AccessToken=access_token,
+                    UserAttributes=updates
+                )
+                logger.info(f"Backfilled Cognito role attributes: {[u['Name'] for u in updates]}")
+
+            updated_attributes = dict(current_attributes)
+            if role:
+                updated_attributes['custom:role'] = role
+            if hospital_id:
+                updated_attributes['custom:hospital_id'] = hospital_id
+
+            return updated_attributes
+
+        except ClientError as e:
+            self._log_error('ensure_role_attributes', e)
+            logger.error(f"Failed to backfill role attributes: {e.response['Error']['Code']}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error while backfilling role attributes: {str(e)}")
+            return None
