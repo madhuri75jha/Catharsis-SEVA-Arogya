@@ -70,6 +70,24 @@ variable "acm_zone_id" {
   default     = ""
 }
 
+variable "create_route53_zone" {
+  description = "Create a Route53 public hosted zone when acm_zone_id is not provided"
+  type        = bool
+  default     = false
+}
+
+variable "route53_zone_name" {
+  description = "Route53 hosted zone name to create/use (defaults to acm_domain_name)"
+  type        = string
+  default     = ""
+}
+
+variable "create_www_record" {
+  description = "Create Route53 alias records and ACM SAN for www.<acm_domain_name>"
+  type        = bool
+  default     = true
+}
+
 variable "container_image" {
   description = "Docker image URI for ECS task (ECR repository URL with tag)"
   type        = string
@@ -154,4 +172,34 @@ variable "frontend_build_path" {
   description = "Path to frontend build directory (for documentation purposes)"
   type        = string
   default     = "../seva-arogya-frontend/build"
+}
+
+variable "enable_prescription_pdf_lambda" {
+  description = "Create Lambda for prescription PDF generation"
+  type        = bool
+  default     = true
+}
+
+variable "prescription_pdf_lambda_name" {
+  description = "Name for prescription PDF Lambda function (empty = auto)"
+  type        = string
+  default     = ""
+}
+
+variable "prescription_pdf_lambda_zip_path" {
+  description = "Path to Lambda deployment zip file"
+  type        = string
+  default     = "build/prescription_pdf_lambda.zip"
+}
+
+variable "prescription_pdf_lambda_timeout" {
+  description = "Lambda timeout in seconds"
+  type        = number
+  default     = 30
+}
+
+variable "prescription_pdf_lambda_memory_mb" {
+  description = "Lambda memory size in MB"
+  type        = number
+  default     = 512
 }

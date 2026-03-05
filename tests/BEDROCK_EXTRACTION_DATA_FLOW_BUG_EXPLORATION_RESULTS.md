@@ -52,7 +52,7 @@ These tests FAIL as expected, confirming the bug exists:
      - Response Body: `{"status": "error", "error_code": "EXTRACTION_FAILED", "error_message": "Failed to extract prescription data"}`
    - **Expected Behavior on ECS**:
      - POST /api/v1/extract returns 500 Internal Server Error
-     - Browser console shows: POST https://sevaarogya.shoppertrends.in/api/v1/extract 500
+     - Browser console shows: POST https://sevaarogya.in/api/v1/extract 500
      - Backend logs show: AccessDeniedException for bedrock-runtime:InvokeModel
    - **Impact**: Users cannot generate prescription data from medical transcripts
 
@@ -124,7 +124,7 @@ When deployed to ECS with the buggy IAM policy:
    - ✅ Step 1: Comprehend Medical entity extraction succeeds (correct namespace)
    - ❌ Step 2: Bedrock model invocation fails with AccessDeniedException
 4. API returns 500 Internal Server Error
-5. Browser console shows: `POST https://sevaarogya.shoppertrends.in/api/v1/extract 500 (Internal Server Error)`
+5. Browser console shows: `POST https://sevaarogya.in/api/v1/extract 500 (Internal Server Error)`
 6. Backend logs show: `AccessDeniedException: User is not authorized to perform: bedrock-runtime:InvokeModel`
 
 ## Fix Required

@@ -16,11 +16,21 @@ rbac_service = None
 pdf_generator = None
 bedrock_client = None
 database_manager = None
+lambda_pdf_service = None
+app_config_manager = None
 
 
-def init_prescription_routes(presc_service, rbac_svc, pdf_gen, bedrock=None, db_manager=None):
+def init_prescription_routes(
+    presc_service,
+    rbac_svc,
+    pdf_gen,
+    bedrock=None,
+    db_manager=None,
+    lambda_pdf_svc=None,
+    cfg_manager=None,
+):
     """Initialize prescription routes with service instances"""
-    global prescription_service, rbac_service, pdf_generator, bedrock_client, database_manager
+    global prescription_service, rbac_service, pdf_generator, bedrock_client, database_manager, lambda_pdf_service, app_config_manager
     # Backward compatibility: older callers pass 4 args with db_manager as 4th param.
     if db_manager is None and bedrock is not None and hasattr(bedrock, 'execute_with_retry'):
         db_manager = bedrock
@@ -31,6 +41,8 @@ def init_prescription_routes(presc_service, rbac_svc, pdf_gen, bedrock=None, db_
     pdf_generator = pdf_gen
     bedrock_client = bedrock
     database_manager = db_manager
+    lambda_pdf_service = lambda_pdf_svc
+    app_config_manager = cfg_manager
     logger.info("Prescription routes initialized")
 
 
@@ -494,6 +506,18 @@ def generate_pdf(prescription_id):
         has_permission, error_msg = rbac_service.check_permission(user_id, prescription, 'view')
         if not has_permission:
             return jsonify({'success': False, 'message': error_msg}), 403
+
+        # Fast path: reuse existing generated file when available.
+        existing_s3_key = prescription.get('s3_key')
+        if existing_s3_key:
+            existing_url = pdf_generator.get_signed_url(existing_s3_key, expiration=3600)
+            if existing_url:
+                return jsonify({
+                    'success': True,
+                    'download_url': existing_url,
+                    'expires_in': 3600,
+                    'cached': True
+                })
         
         # Get hospital data
         hospital_query = "SELECT * FROM hospitals WHERE hospital_id = %s"
@@ -521,9 +545,58 @@ def generate_pdf(prescription_id):
             prescription['doctor_name'] = doctor_result[0][0]
             prescription['doctor_specialty'] = doctor_result[0][1]
             prescription['doctor_signature_url'] = doctor_result[0][2]
-        
-        # Generate PDF
-        s3_key = pdf_generator.generate_prescription_pdf(prescription, hospital)
+
+        # Get hospital config JSON used for structure/layout hints
+        hospital_config = {}
+        if app_config_manager:
+            try:
+                cfg = app_config_manager.load_hospital_configuration(prescription['hospital_id'])
+                hospital_config = cfg.model_dump(mode='json')
+            except Exception:
+                try:
+                    cfg = app_config_manager.get_default_hospital_configuration()
+                    hospital_config = cfg.model_dump(mode='json')
+                except Exception:
+                    hospital_config = {}
+
+        s3_key = None
+        # Lambda-first PDF generation path
+        if lambda_pdf_service:
+            lambda_payload = {
+                "prescription": prescription,
+                "hospital": hospital,
+                "hospital_config": hospital_config,
+                "metadata": {
+                    "prescription_id": prescription_id,
+                    "hospital_id": prescription.get('hospital_id'),
+                    "requested_by": user_id,
+                },
+            }
+            lambda_result = lambda_pdf_service.generate_pdf(lambda_payload)
+
+            if lambda_result and lambda_result.get('download_url'):
+                lambda_s3_key = lambda_result.get('s3_key')
+                if lambda_s3_key:
+                    update_query = "UPDATE prescriptions SET s3_key = %s WHERE prescription_id = %s"
+                    database_manager.execute_with_retry(update_query, (lambda_s3_key, prescription_id))
+                return jsonify({
+                    'success': True,
+                    'download_url': lambda_result['download_url'],
+                    'expires_in': int(lambda_result.get('expires_in', 3600)),
+                    'cached': bool(lambda_result.get('cached', False))
+                })
+
+            if lambda_result and lambda_result.get('s3_key'):
+                s3_key = lambda_result['s3_key']
+
+            if lambda_result and lambda_result.get('pdf_base64'):
+                pdf_bytes = lambda_pdf_service.decode_pdf_base64(lambda_result['pdf_base64'])
+                if pdf_bytes:
+                    s3_key = pdf_generator.storage.upload_pdf(pdf_bytes, user_id, prescription_id)
+
+        # Fallback to in-app generator if Lambda unavailable/fails
+        if not s3_key:
+            s3_key = pdf_generator.generate_prescription_pdf(prescription, hospital)
         
         if not s3_key:
             return jsonify({'success': False, 'message': 'Failed to generate PDF'}), 500

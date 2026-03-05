@@ -9,6 +9,7 @@ class PrescriptionFinalizeManager {
         this.prescription = null;
         this.sections = [];
         this.editingSection = null;
+        this.activePopupResolver = null;
         
         this.init();
     }
@@ -236,11 +237,17 @@ class PrescriptionFinalizeManager {
                 this.renderSections();
                 this.updateProgress();
             } else {
-                alert(data.message || 'Failed to approve section');
+                await this.showPopup({
+                    title: 'Unable to Approve',
+                    message: data.message || 'Failed to approve section'
+                });
             }
         } catch (error) {
             console.error('Error approving section:', error);
-            alert('An error occurred while approving the section');
+            await this.showPopup({
+                title: 'Approval Error',
+                message: 'An error occurred while approving the section'
+            });
         }
     }
     
@@ -266,11 +273,17 @@ class PrescriptionFinalizeManager {
                 this.renderSections();
                 this.updateProgress();
             } else {
-                alert(data.message || 'Failed to reject section');
+                await this.showPopup({
+                    title: 'Unable to Reject',
+                    message: data.message || 'Failed to reject section'
+                });
             }
         } catch (error) {
             console.error('Error rejecting section:', error);
-            alert('An error occurred while rejecting the section');
+            await this.showPopup({
+                title: 'Rejection Error',
+                message: 'An error occurred while rejecting the section'
+            });
         }
     }
     
@@ -282,7 +295,10 @@ class PrescriptionFinalizeManager {
             const newContent = textarea.value.trim();
             
             if (!newContent) {
-                alert('Section content cannot be empty');
+                await this.showPopup({
+                    title: 'Empty Section',
+                    message: 'Section content cannot be empty'
+                });
                 return;
             }
             
@@ -311,11 +327,17 @@ class PrescriptionFinalizeManager {
                 this.renderSections();
                 this.updateProgress();
             } else {
-                alert(data.message || 'Failed to save section');
+                await this.showPopup({
+                    title: 'Save Failed',
+                    message: data.message || 'Failed to save section'
+                });
             }
         } catch (error) {
             console.error('Error saving section:', error);
-            alert('An error occurred while saving the section');
+            await this.showPopup({
+                title: 'Save Error',
+                message: 'An error occurred while saving the section'
+            });
         }
     }
     
@@ -355,7 +377,15 @@ class PrescriptionFinalizeManager {
     }
     
     async handleFinalize() {
-        if (!confirm('Are you sure you want to finalize this prescription? This action cannot be undone.')) {
+        const confirmed = await this.showPopup({
+            title: 'Finalize Prescription',
+            message: 'Are you sure you want to finalize this prescription? This action cannot be undone.',
+            confirmText: 'Yes, Finalize',
+            cancelText: 'Cancel',
+            isConfirm: true
+        });
+        
+        if (!confirmed) {
             return;
         }
         
@@ -376,7 +406,10 @@ class PrescriptionFinalizeManager {
                 // Redirect to thank you page
                 window.navigateWithTransition(data.redirect_url || '/thank-you');
             } else {
-                alert(data.message || 'Failed to finalize prescription');
+                await this.showPopup({
+                    title: 'Finalization Failed',
+                    message: data.message || 'Failed to finalize prescription'
+                });
                 
                 if (finalizeBtn) {
                     finalizeBtn.disabled = false;
@@ -385,7 +418,10 @@ class PrescriptionFinalizeManager {
             }
         } catch (error) {
             console.error('Error finalizing prescription:', error);
-            alert('An error occurred while finalizing the prescription');
+            await this.showPopup({
+                title: 'Finalization Error',
+                message: 'An error occurred while finalizing the prescription'
+            });
             
             const finalizeBtn = document.getElementById('finalize-btn');
             if (finalizeBtn) {
@@ -418,6 +454,57 @@ class PrescriptionFinalizeManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+    
+    showPopup({ title, message, confirmText = 'OK', cancelText = 'Cancel', isConfirm = false }) {
+        const modal = document.getElementById('custom-popup-modal');
+        const titleEl = document.getElementById('custom-popup-title');
+        const messageEl = document.getElementById('custom-popup-message');
+        const confirmBtn = document.getElementById('custom-popup-confirm');
+        const cancelBtn = document.getElementById('custom-popup-cancel');
+        
+        if (!modal || !titleEl || !messageEl || !confirmBtn || !cancelBtn) {
+            console.error('Popup modal elements not found');
+            return Promise.resolve(isConfirm ? false : true);
+        }
+        
+        titleEl.textContent = title || 'Notice';
+        messageEl.textContent = message || '';
+        confirmBtn.textContent = confirmText;
+        
+        if (isConfirm) {
+            cancelBtn.textContent = cancelText;
+            cancelBtn.classList.remove('hidden');
+        } else {
+            cancelBtn.classList.add('hidden');
+        }
+        
+        modal.classList.remove('hidden');
+        
+        return new Promise((resolve) => {
+            if (this.activePopupResolver) {
+                this.activePopupResolver(isConfirm ? false : true);
+            }
+            
+            this.activePopupResolver = resolve;
+            
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                this.activePopupResolver = null;
+            };
+            
+            confirmBtn.onclick = () => {
+                cleanup();
+                resolve(true);
+            };
+            
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(false);
+            };
+        });
     }
 }
 

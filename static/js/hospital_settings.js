@@ -124,6 +124,13 @@ class HospitalSettingsManager {
         if (addDoctorBtn) {
             addDoctorBtn.onclick = () => this.showAddDoctorModal();
         }
+
+        const configBtn = document.getElementById('manage-prescription-config-btn');
+        if (configBtn && this.hospitalId) {
+            configBtn.onclick = () => {
+                window.navigateWithTransition(`/hospital-settings/${encodeURIComponent(this.hospitalId)}/prescription-config`);
+            };
+        }
     }
     
     renderDoctors() {

@@ -51,6 +51,15 @@ for cmd in terraform aws docker; do
   fi
 done
 
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+else
+  echo "Error: python3/python is required to package Lambda."
+  exit 1
+fi
+
 echo ""
 echo "==> Running pre-deployment checks..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,6 +82,9 @@ terraform_vars=(
   "-var=certificate_arn=${CERTIFICATE_ARN:-}"
   "-var=acm_domain_name=${ACM_DOMAIN_NAME:-}"
   "-var=acm_zone_id=${ACM_ZONE_ID:-}"
+  "-var=create_route53_zone=${CREATE_ROUTE53_ZONE:-false}"
+  "-var=route53_zone_name=${ROUTE53_ZONE_NAME:-}"
+  "-var=create_www_record=${CREATE_WWW_RECORD:-true}"
   "-var=container_image=${CONTAINER_IMAGE:-nginx:latest}"
   "-var=db_name=${DB_NAME}"
   "-var=db_engine_version=${DB_ENGINE_VERSION:-}"
@@ -86,6 +98,46 @@ terraform_vars=(
   "-var=log_file_path=${LOG_FILE_PATH:-logs/app.log}"
   "-var=cors_origins=[\"${CORS_ALLOWED_ORIGINS}\"]"
 )
+
+LAMBDA_SRC_DIR="$ROOT_DIR/lambda/prescription_pdf_generator"
+LAMBDA_BUILD_DIR="$INFRA_DIR/build/prescription_pdf_lambda"
+LAMBDA_ZIP_PATH="$INFRA_DIR/build/prescription_pdf_lambda.zip"
+
+echo ""
+echo "==> Packaging prescription PDF Lambda"
+rm -rf "$LAMBDA_BUILD_DIR"
+mkdir -p "$LAMBDA_BUILD_DIR"
+
+if [ ! -f "$LAMBDA_SRC_DIR/handler.py" ]; then
+  echo "Error: Lambda handler not found at $LAMBDA_SRC_DIR/handler.py"
+  exit 1
+fi
+
+cp "$LAMBDA_SRC_DIR/handler.py" "$LAMBDA_BUILD_DIR/handler.py"
+
+if [ -f "$LAMBDA_SRC_DIR/requirements.txt" ]; then
+  "$PYTHON_BIN" -m pip install -r "$LAMBDA_SRC_DIR/requirements.txt" -t "$LAMBDA_BUILD_DIR" >/dev/null
+fi
+
+rm -f "$LAMBDA_ZIP_PATH"
+(
+  cd "$LAMBDA_BUILD_DIR"
+  "$PYTHON_BIN" - <<'PY'
+import os
+import zipfile
+
+zip_path = os.path.abspath(os.path.join(os.getcwd(), "..", "prescription_pdf_lambda.zip"))
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    for root, _, files in os.walk("."):
+        for name in files:
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, ".")
+            zf.write(full, rel)
+print(zip_path)
+PY
+)
+
+terraform_vars+=("-var=prescription_pdf_lambda_zip_path=${LAMBDA_ZIP_PATH}")
 
 echo ""
 echo "==> Terraform init/plan/apply (infra)"

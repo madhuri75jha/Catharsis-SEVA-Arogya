@@ -123,6 +123,7 @@ class LogsViewerManager {
             if (data.success) {
                 const newLogs = data.logs || [];
                 this.logs = reset ? newLogs : [...this.logs, ...newLogs];
+                this.logs = this.sortLogsByLatest(this.logs);
                 this.nextToken = data.next_token;
                 this.hasMore = data.has_more || false;
                 
@@ -161,8 +162,9 @@ class LogsViewerManager {
         if (container) {
             container.innerHTML = '';
             
-            this.logs.forEach(log => {
+            this.logs.forEach((log, index) => {
                 const logEntry = this.createLogEntry(log);
+                logEntry.setAttribute('data-row', String(index + 1));
                 container.appendChild(logEntry);
             });
         }
@@ -181,21 +183,31 @@ class LogsViewerManager {
         const entry = document.createElement('div');
         entry.className = 'log-entry';
         
-        // Detect log level from message
         const message = log.message || '';
-        if (message.toLowerCase().includes('error')) {
+        const level = this.detectLogLevel(message);
+
+        if (level === 'error') {
             entry.classList.add('log-level-error');
-        } else if (message.toLowerCase().includes('warning') || message.toLowerCase().includes('warn')) {
+        } else if (level === 'warning') {
             entry.classList.add('log-level-warning');
-        } else if (message.toLowerCase().includes('info')) {
+        } else if (level === 'info') {
             entry.classList.add('log-level-info');
         }
         
-        // Timestamp
+        const meta = document.createElement('div');
+        meta.className = 'log-meta';
+
         const timestamp = document.createElement('div');
         timestamp.className = 'log-timestamp';
         timestamp.textContent = this.formatTimestamp(log.timestamp);
-        entry.appendChild(timestamp);
+
+        const levelTag = document.createElement('span');
+        levelTag.className = `log-level-chip chip-${level}`;
+        levelTag.textContent = level.toUpperCase();
+
+        meta.appendChild(timestamp);
+        meta.appendChild(levelTag);
+        entry.appendChild(meta);
         
         // Message
         const messageEl = document.createElement('div');
@@ -204,6 +216,30 @@ class LogsViewerManager {
         entry.appendChild(messageEl);
         
         return entry;
+    }
+
+    detectLogLevel(message) {
+        const text = (message || '').toLowerCase();
+        if (text.includes('error') || text.includes('exception') || text.includes('traceback')) {
+            return 'error';
+        }
+        if (text.includes('warning') || text.includes('warn')) {
+            return 'warning';
+        }
+        if (text.includes('debug')) {
+            return 'debug';
+        }
+        return 'info';
+    }
+
+    sortLogsByLatest(logs) {
+        return [...logs].sort((a, b) => this.timestampToMs(b.timestamp) - this.timestampToMs(a.timestamp));
+    }
+
+    timestampToMs(timestamp) {
+        if (!timestamp) return 0;
+        const ms = new Date(timestamp).getTime();
+        return Number.isFinite(ms) ? ms : 0;
     }
     
     startAutoRefresh() {

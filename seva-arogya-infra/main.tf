@@ -10,10 +10,32 @@ provider "aws" {
 # Data Sources
 data "aws_caller_identity" "current" {}
 
+locals {
+  route53_zone_name         = var.route53_zone_name != "" ? var.route53_zone_name : var.acm_domain_name
+  use_auto_route53_zone     = var.acm_zone_id == "" && var.create_route53_zone && local.route53_zone_name != ""
+  has_route53_zone          = var.acm_zone_id != "" || local.use_auto_route53_zone
+  effective_route53_zone_id = var.acm_zone_id != "" ? var.acm_zone_id : (local.use_auto_route53_zone ? aws_route53_zone.primary[0].zone_id : "")
+  www_domain_name           = var.create_www_record && var.acm_domain_name != "" && !startswith(var.acm_domain_name, "www.") ? "www.${var.acm_domain_name}" : ""
+  cert_validation_domains   = local.www_domain_name != "" ? toset([var.acm_domain_name, local.www_domain_name]) : toset([var.acm_domain_name])
+}
+
+# Optional Route53 hosted zone creation (for new domains)
+resource "aws_route53_zone" "primary" {
+  count = local.use_auto_route53_zone ? 1 : 0
+  name  = local.route53_zone_name
+
+  tags = {
+    Name        = local.route53_zone_name
+    Project     = var.project_name
+    Environment = var.env_name
+  }
+}
+
 # ACM Certificate (optional; requires a domain you control)
 resource "aws_acm_certificate" "alb" {
   count             = var.acm_domain_name != "" ? 1 : 0
   domain_name       = var.acm_domain_name
+  subject_alternative_names = local.www_domain_name != "" ? [local.www_domain_name] : []
   validation_method = "DNS"
 
   tags = {
@@ -25,25 +47,35 @@ resource "aws_acm_certificate" "alb" {
 
 # DNS validation (optional; only if a hosted zone is provided)
 resource "aws_route53_record" "alb_cert_validation" {
-  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
-  zone_id = var.acm_zone_id
+  for_each = var.acm_domain_name != "" && local.has_route53_zone ? { for domain in local.cert_validation_domains : domain => domain } : {}
+  zone_id = local.effective_route53_zone_id
 
-  name    = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_name
-  type    = tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_type
-  ttl     = 60
-  records = [tolist(aws_acm_certificate.alb[0].domain_validation_options)[0].resource_record_value]
+  name = one([
+    for dvo in tolist(aws_acm_certificate.alb[0].domain_validation_options) : dvo.resource_record_name
+    if dvo.domain_name == each.key
+  ])
+  type = one([
+    for dvo in tolist(aws_acm_certificate.alb[0].domain_validation_options) : dvo.resource_record_type
+    if dvo.domain_name == each.key
+  ])
+  ttl             = 60
+  allow_overwrite = true
+  records = [one([
+    for dvo in tolist(aws_acm_certificate.alb[0].domain_validation_options) : dvo.resource_record_value
+    if dvo.domain_name == each.key
+  ])]
 }
 
 resource "aws_acm_certificate_validation" "alb" {
-  count                   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
+  count                   = var.acm_domain_name != "" && local.has_route53_zone ? 1 : 0
   certificate_arn         = aws_acm_certificate.alb[0].arn
-  validation_record_fqdns = [aws_route53_record.alb_cert_validation[0].fqdn]
+  validation_record_fqdns = [for record in aws_route53_record.alb_cert_validation : record.fqdn]
 }
 
 # Route53 A record to route domain traffic to ALB
 resource "aws_route53_record" "alb_domain_a" {
-  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
-  zone_id = var.acm_zone_id
+  count   = var.acm_domain_name != "" && local.has_route53_zone ? 1 : 0
+  zone_id = local.effective_route53_zone_id
   name    = var.acm_domain_name
   type    = "A"
 
@@ -56,9 +88,37 @@ resource "aws_route53_record" "alb_domain_a" {
 
 # Route53 AAAA record to route domain traffic to ALB (IPv6)
 resource "aws_route53_record" "alb_domain_aaaa" {
-  count   = var.acm_domain_name != "" && var.acm_zone_id != "" ? 1 : 0
-  zone_id = var.acm_zone_id
+  count   = var.acm_domain_name != "" && local.has_route53_zone ? 1 : 0
+  zone_id = local.effective_route53_zone_id
   name    = var.acm_domain_name
+  type    = "AAAA"
+
+  alias {
+    name                   = module.alb.alb_dns_name
+    zone_id                = module.alb.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+# Route53 A record for www domain
+resource "aws_route53_record" "alb_domain_www_a" {
+  count   = local.www_domain_name != "" && local.has_route53_zone ? 1 : 0
+  zone_id = local.effective_route53_zone_id
+  name    = local.www_domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.alb.alb_dns_name
+    zone_id                = module.alb.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+# Route53 AAAA record for www domain
+resource "aws_route53_record" "alb_domain_www_aaaa" {
+  count   = local.www_domain_name != "" && local.has_route53_zone ? 1 : 0
+  zone_id = local.effective_route53_zone_id
+  name    = local.www_domain_name
   type    = "AAAA"
 
   alias {
@@ -108,6 +168,95 @@ module "s3_audio" {
   cors_allowed_methods = ["GET", "PUT", "POST", "DELETE"]
   project_name         = var.project_name
   env_name             = var.env_name
+}
+
+locals {
+  prescription_pdf_lambda_name = var.prescription_pdf_lambda_name != "" ? var.prescription_pdf_lambda_name : "${var.project_name}-${var.env_name}-prescription-pdf"
+}
+
+resource "aws_iam_role" "prescription_pdf_lambda" {
+  count = var.enable_prescription_pdf_lambda ? 1 : 0
+
+  name = "${local.prescription_pdf_lambda_name}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${local.prescription_pdf_lambda_name}-role"
+    Project     = var.project_name
+    Environment = var.env_name
+  }
+}
+
+resource "aws_iam_role_policy" "prescription_pdf_lambda" {
+  count = var.enable_prescription_pdf_lambda ? 1 : 0
+
+  name = "${local.prescription_pdf_lambda_name}-policy"
+  role = aws_iam_role.prescription_pdf_lambda[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${module.s3_pdf.bucket_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = module.s3_pdf.bucket_arn
+      }
+    ]
+  })
+}
+
+resource "aws_lambda_function" "prescription_pdf" {
+  count = var.enable_prescription_pdf_lambda ? 1 : 0
+
+  function_name    = local.prescription_pdf_lambda_name
+  role             = aws_iam_role.prescription_pdf_lambda[0].arn
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  filename         = var.prescription_pdf_lambda_zip_path
+  source_code_hash = filebase64sha256(var.prescription_pdf_lambda_zip_path)
+  timeout          = var.prescription_pdf_lambda_timeout
+  memory_size      = var.prescription_pdf_lambda_memory_mb
+
+  environment {
+    variables = {
+      PDF_BUCKET = module.s3_pdf.bucket_id
+    }
+  }
+
+  depends_on = [aws_iam_role_policy.prescription_pdf_lambda]
 }
 
 # RDS Module
@@ -186,10 +335,12 @@ module "alb" {
 module "iam" {
   source = "./modules/iam"
 
-  project_name        = var.project_name
-  env_name            = var.env_name
-  s3_pdf_bucket_arn   = module.s3_pdf.bucket_arn
-  s3_audio_bucket_arn = module.s3_audio.bucket_arn
+  project_name                  = var.project_name
+  env_name                      = var.env_name
+  s3_pdf_bucket_arn             = module.s3_pdf.bucket_arn
+  s3_audio_bucket_arn           = module.s3_audio.bucket_arn
+  enable_prescription_pdf_lambda = var.enable_prescription_pdf_lambda
+  prescription_pdf_lambda_arn = try(aws_lambda_function.prescription_pdf[0].arn, "")
 }
 
 # ECS Module
@@ -235,6 +386,7 @@ module "ecs" {
     CORS_ALLOWED_ORIGINS      = join(",", var.cors_origins)
     ENABLE_COMPREHEND_MEDICAL = var.enable_comprehend_medical ? "true" : "false"
     STREAM_IDLE_TIMEOUT_SECONDS = tostring(var.stream_idle_timeout_seconds)
+    PRESCRIPTION_PDF_LAMBDA_NAME = try(aws_lambda_function.prescription_pdf[0].function_name, "")
   }
 
   secrets = [

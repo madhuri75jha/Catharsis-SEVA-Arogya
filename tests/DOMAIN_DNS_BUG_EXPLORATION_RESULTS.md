@@ -4,7 +4,7 @@
 Test executed on unfixed code to confirm bug exists.
 
 ## Bug Condition
-- **ACM_DOMAIN_NAME**: sevaarogya.shoppertrends.in (configured)
+- **ACM_DOMAIN_NAME**: sevaarogya.in (configured)
 - **ACM_ZONE_ID**: (empty - but bug exists even when this would be configured)
 
 ## Counterexamples Found
@@ -42,7 +42,7 @@ The bug exploration tests successfully identified the following counterexamples 
 ### 5. Domain Does Not Resolve via DNS
 **Test**: `test_domain_resolves_via_dns`
 **Result**: FAILED (as expected on unfixed code)
-**Counterexample**: Domain sevaarogya.shoppertrends.in does not resolve via DNS.
+**Counterexample**: Domain sevaarogya.in does not resolve via DNS.
 - **Error**: [Errno 11001] getaddrinfo failed
 - **Expected**: Domain resolves to ALB IP addresses
 - **Actual**: DNS lookup failed
@@ -53,7 +53,7 @@ The bug exploration tests successfully identified the following counterexamples 
 **Counterexamples Found**: 3 issues
 1. Terraform state missing 'aws_route53_record.alb_domain_a' resource
 2. Terraform state missing 'aws_route53_record.alb_domain_aaaa' resource
-3. Domain sevaarogya.shoppertrends.in does not resolve: [Errno 11001] getaddrinfo failed
+3. Domain sevaarogya.in does not resolve: [Errno 11001] getaddrinfo failed
 
 ## Root Cause Confirmation
 

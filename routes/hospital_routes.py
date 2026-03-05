@@ -6,7 +6,9 @@ from flask import Blueprint, request, jsonify, session
 from functools import wraps
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from botocore.exceptions import ClientError
+from models.bedrock_extraction import HospitalConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ hospital_bp = Blueprint('hospitals', __name__, url_prefix='/api/v1')
 rbac_service = None
 database_manager = None
 cloudwatch_service = None
+HOSPITAL_CONFIG_DIR = Path('config/hospitals')
 
 
 def init_hospital_routes(rbac_svc, db_manager, cw_service=None):
@@ -68,6 +71,41 @@ def require_role(*allowed_roles):
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
+
+def _can_manage_hospital_config(hospital_id: str) -> tuple[bool, str, str, str]:
+    """Authorization helper for hospital-bound config endpoints."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return False, '', '', ''
+
+    user_role = rbac_service.get_user_role(user_id)
+    user_hospital = rbac_service.get_user_hospital(user_id)
+
+    if user_role == 'Doctor':
+        return False, user_id, user_role, user_hospital
+
+    if user_role == 'HospitalAdmin' and user_hospital != hospital_id:
+        return False, user_id, user_role, user_hospital
+
+    return True, user_id, user_role, user_hospital
+
+
+def _load_hospital_name(hospital_id: str) -> str:
+    query = "SELECT name FROM hospitals WHERE hospital_id = %s"
+    result = database_manager.execute_with_retry(query, (hospital_id,))
+    if result and result[0] and result[0][0]:
+        return result[0][0]
+    return hospital_id
+
+
+def _default_config_payload(hospital_id: str) -> dict:
+    default_file = HOSPITAL_CONFIG_DIR / 'default.json'
+    with open(default_file, 'r', encoding='utf-8') as f:
+        payload = json.load(f)
+    payload['hospital_id'] = hospital_id
+    payload['hospital_name'] = _load_hospital_name(hospital_id)
+    return payload
 
 
 # Hospital Management Endpoints
@@ -213,6 +251,105 @@ def update_hospital(hospital_id):
     except Exception as e:
         logger.error(f"Failed to update hospital {hospital_id}: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to update hospital'}), 500
+
+
+# Hospital Prescription Config Endpoints
+
+@hospital_bp.route('/hospitals/<hospital_id>/prescription-config', methods=['GET'])
+@login_required
+def get_prescription_config(hospital_id):
+    """Get prescription form config JSON for a hospital."""
+    try:
+        authorized, _, _, _ = _can_manage_hospital_config(hospital_id)
+        if not authorized:
+            return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+        HOSPITAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_file = HOSPITAL_CONFIG_DIR / f'{hospital_id}.json'
+
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config_payload = json.load(f)
+            source = 'hospital'
+        else:
+            config_payload = _default_config_payload(hospital_id)
+            source = 'default_fallback'
+
+        return jsonify({
+            'success': True,
+            'hospital_id': hospital_id,
+            'source': source,
+            'exists': config_file.exists(),
+            'config': config_payload
+        })
+    except Exception as e:
+        logger.error(f"Failed to get prescription config for {hospital_id}: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'message': 'Failed to retrieve prescription config'}), 500
+
+
+@hospital_bp.route('/hospitals/<hospital_id>/prescription-config', methods=['PUT'])
+@login_required
+def save_prescription_config(hospital_id):
+    """Save hospital-specific prescription form config JSON."""
+    try:
+        authorized, user_id, _, _ = _can_manage_hospital_config(hospital_id)
+        if not authorized:
+            return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+        payload = request.get_json(silent=True) or {}
+        config_payload = payload.get('config')
+        if not isinstance(config_payload, dict):
+            return jsonify({'success': False, 'message': 'config object is required'}), 400
+
+        config_payload['hospital_id'] = hospital_id
+        if not config_payload.get('hospital_name'):
+            config_payload['hospital_name'] = _load_hospital_name(hospital_id)
+        if not config_payload.get('version'):
+            config_payload['version'] = '1.0'
+
+        # Validate structure before writing.
+        validated = HospitalConfiguration(**config_payload)
+        clean_config = validated.model_dump(mode='json')
+
+        HOSPITAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_file = HOSPITAL_CONFIG_DIR / f'{hospital_id}.json'
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(clean_config, f, indent=2, ensure_ascii=True)
+
+        logger.info(f"Prescription config saved for hospital {hospital_id} by user {user_id}")
+        return jsonify({'success': True, 'message': 'Prescription config saved', 'config': clean_config})
+    except Exception as e:
+        logger.error(f"Failed to save prescription config for {hospital_id}: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Failed to save prescription config: {str(e)}'}), 500
+
+
+@hospital_bp.route('/hospitals/<hospital_id>/prescription-config/generate-default', methods=['POST'])
+@login_required
+def generate_default_prescription_config(hospital_id):
+    """Generate/reset hospital config from default template."""
+    try:
+        authorized, user_id, _, _ = _can_manage_hospital_config(hospital_id)
+        if not authorized:
+            return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+        config_payload = _default_config_payload(hospital_id)
+        validated = HospitalConfiguration(**config_payload)
+        clean_config = validated.model_dump(mode='json')
+
+        HOSPITAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_file = HOSPITAL_CONFIG_DIR / f'{hospital_id}.json'
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(clean_config, f, indent=2, ensure_ascii=True)
+
+        logger.info(f"Prescription config generated from default for hospital {hospital_id} by user {user_id}")
+        return jsonify({
+            'success': True,
+            'message': 'Generated from default config',
+            'config': clean_config
+        })
+    except Exception as e:
+        logger.error(f"Failed to generate default prescription config for {hospital_id}: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Failed to generate default config: {str(e)}'}), 500
 
 
 # Doctor Management Endpoints

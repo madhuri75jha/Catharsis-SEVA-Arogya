@@ -561,7 +561,7 @@ class TestBedrockExtractionDataFlowBugCondition:
                 f"\n"
                 f"Expected Behavior on ECS:\n"
                 f"  POST /api/v1/extract returns 500 Internal Server Error\n"
-                f"  Browser console shows: POST https://sevaarogya.shoppertrends.in/api/v1/extract 500\n"
+                f"  Browser console shows: POST https://sevaarogya.in/api/v1/extract 500\n"
                 f"  Backend logs show: AccessDeniedException for bedrock-runtime:InvokeModel\n"
                 f"\n"
                 f"Impact:\n"

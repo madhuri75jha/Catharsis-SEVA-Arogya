@@ -35,6 +35,9 @@ terraform plan \
   -var="certificate_arn=${CERTIFICATE_ARN:-}" \
   -var="acm_domain_name=${ACM_DOMAIN_NAME:-}" \
   -var="acm_zone_id=${ACM_ZONE_ID:-}" \
+  -var="create_route53_zone=${CREATE_ROUTE53_ZONE:-false}" \
+  -var="route53_zone_name=${ROUTE53_ZONE_NAME:-}" \
+  -var="create_www_record=${CREATE_WWW_RECORD:-true}" \
   -var="container_image=${CONTAINER_IMAGE:-nginx:latest}" \
   -var="db_name=${DB_NAME}" \
   -var="db_engine_version=${DB_ENGINE_VERSION:-}" \

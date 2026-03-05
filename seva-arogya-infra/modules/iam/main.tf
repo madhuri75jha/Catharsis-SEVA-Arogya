@@ -262,3 +262,24 @@ resource "aws_iam_role_policy" "ecs_task_cloudwatch_read" {
     ]
   })
 }
+
+# ECS Task Role Policy - Lambda invoke (prescription PDF generation)
+resource "aws_iam_role_policy" "ecs_task_lambda_invoke" {
+  count = var.enable_prescription_pdf_lambda ? 1 : 0
+
+  name = "lambda-invoke-prescription-pdf"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = var.prescription_pdf_lambda_arn
+      }
+    ]
+  })
+}

@@ -244,11 +244,19 @@ def init_app():
         from services.rbac_service import RBACService
         from services.pdf_generator import PDFGenerator
         from services.cloudwatch_service import CloudWatchService
+        from services.lambda_pdf_service import LambdaPDFService
         
         # Initialize services
         prescription_service = PrescriptionService(database_manager)
         rbac_service = RBACService(database_manager)
         pdf_generator = PDFGenerator(storage_manager)
+        lambda_pdf_service = None
+        lambda_function_name = os.getenv('PRESCRIPTION_PDF_LAMBDA_NAME', '').strip()
+        if lambda_function_name:
+            lambda_pdf_service = LambdaPDFService(region=region, function_name=lambda_function_name)
+            logger.info(f"Lambda PDF service enabled: function={lambda_function_name}")
+        else:
+            logger.info("Lambda PDF service disabled: PRESCRIPTION_PDF_LAMBDA_NAME is not set")
         
         # Initialize CloudWatch service if configured
         cloudwatch_log_group = os.getenv('CLOUDWATCH_LOG_GROUP_NAME')
@@ -261,7 +269,14 @@ def init_app():
             logger.warning("CloudWatch service disabled: CLOUDWATCH_LOG_GROUP_NAME is not set")
         
         # Initialize route blueprints with services
-        init_prescription_routes(prescription_service, rbac_service, pdf_generator, database_manager)
+        init_prescription_routes(
+            prescription_service,
+            rbac_service,
+            pdf_generator,
+            db_manager=database_manager,
+            lambda_pdf_svc=lambda_pdf_service,
+            cfg_manager=config_manager
+        )
         init_hospital_routes(rbac_service, database_manager, cloudwatch_service)
         
         # Register blueprints
@@ -515,6 +530,29 @@ def hospital_settings_page(hospital_id=None):
     if session.get('user_role') == 'DeveloperAdmin' and not hospital_id:
         return redirect(url_for('hospitals_page'))
     return render_template('hospital_settings.html', selected_hospital_id=hospital_id)
+
+
+@app.route('/hospital-settings/prescription-config')
+@app.route('/hospital-settings/<hospital_id>/prescription-config')
+@login_required
+def hospital_prescription_config_page(hospital_id=None):
+    """Prescription configuration management page"""
+    user_role = session.get('user_role')
+    user_hospital = session.get('hospital_id')
+
+    if user_role == 'DeveloperAdmin':
+        if not hospital_id:
+            return redirect(url_for('hospitals_page'))
+        return render_template('prescription_config_settings.html', selected_hospital_id=hospital_id)
+
+    if not user_hospital:
+        return redirect(url_for('hospital_settings_page'))
+
+    # HospitalAdmin should only edit their own hospital config.
+    if hospital_id and hospital_id != user_hospital:
+        return redirect(url_for('hospital_prescription_config_page', hospital_id=user_hospital))
+
+    return render_template('prescription_config_settings.html', selected_hospital_id=user_hospital)
 
 
 @app.route('/logs')
@@ -806,6 +844,72 @@ def consultation_detail(consultation_id):
                 except (json.JSONDecodeError, TypeError) as e:
                     logger.warning(f"Failed to parse sections for prescription {presc_id}: {str(e)}")
                     sections_list = []
+
+            # In save-and-finalize flow, medications are persisted under sections.medications.
+            # Build medications fallback if medications column is empty/missing.
+            if not medications_list:
+                extracted_medications = []
+                try:
+                    if isinstance(sections_list, dict):
+                        meds_section = sections_list.get('medications')
+                        if isinstance(meds_section, dict):
+                            meds_section = [meds_section]
+                        if isinstance(meds_section, list):
+                            for item in meds_section:
+                                if not isinstance(item, dict):
+                                    continue
+                                mapped = {
+                                    'name': item.get('medicine_name') or item.get('name') or '',
+                                    'dosage': item.get('dose') or item.get('dosage') or '',
+                                    'frequency': item.get('frequency') or '',
+                                    'duration': item.get('duration') or ''
+                                }
+                                if any(mapped.values()):
+                                    extracted_medications.append(mapped)
+                    elif isinstance(sections_list, list):
+                        for section_item in sections_list:
+                            if not isinstance(section_item, dict):
+                                continue
+                            section_key = (section_item.get('key') or section_item.get('section_id') or '').lower()
+                            if section_key != 'medications':
+                                continue
+
+                            content = section_item.get('content')
+                            fields = section_item.get('fields')
+
+                            if isinstance(content, list):
+                                for item in content:
+                                    if isinstance(item, dict):
+                                        mapped = {
+                                            'name': item.get('medicine_name') or item.get('name') or '',
+                                            'dosage': item.get('dose') or item.get('dosage') or '',
+                                            'frequency': item.get('frequency') or '',
+                                            'duration': item.get('duration') or ''
+                                        }
+                                        if any(mapped.values()):
+                                            extracted_medications.append(mapped)
+                            elif isinstance(fields, list):
+                                row = {}
+                                for field in fields:
+                                    if not isinstance(field, dict):
+                                        continue
+                                    fname = field.get('field_name')
+                                    if not fname:
+                                        continue
+                                    row[fname] = field.get('value')
+                                mapped = {
+                                    'name': row.get('medicine_name') or row.get('name') or '',
+                                    'dosage': row.get('dose') or row.get('dosage') or '',
+                                    'frequency': row.get('frequency') or '',
+                                    'duration': row.get('duration') or ''
+                                }
+                                if any(mapped.values()):
+                                    extracted_medications.append(mapped)
+                except Exception as e:
+                    logger.warning(f"Failed to derive medications from sections for prescription {presc_id}: {str(e)}")
+
+                if extracted_medications:
+                    medications_list = extracted_medications
             
             prescription = {
                 'prescription_id': presc_id,

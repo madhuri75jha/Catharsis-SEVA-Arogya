@@ -112,11 +112,62 @@
         <div id="contextContent" class="text-slate-700 dark:text-slate-300 text-sm leading-relaxed"></div>
     </div>
 </div>
+
+<!-- Custom Popup Modal -->
+<div id="customPopupModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50" id="customPopupBackdrop"></div>
+    <div class="relative w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 shadow-2xl">
+        <h3 id="customPopupTitle" class="text-base font-semibold text-slate-900 dark:text-white">Notice</h3>
+        <p id="customPopupMessage" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+        <div class="mt-5 flex gap-2">
+            <button id="customPopupCancel" class="hidden flex-1 rounded-lg bg-slate-200 dark:bg-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
+                Cancel
+            </button>
+            <button id="customPopupConfirm" class="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors">
+                OK
+            </button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/bedrock_prescription.js') }}"></script>
 <script>
+    function showCustomPopup({ title = 'Notice', message = '', confirmText = 'OK', cancelText = 'Cancel', isConfirm = false }) {
+        const modal = document.getElementById('customPopupModal');
+        const titleEl = document.getElementById('customPopupTitle');
+        const messageEl = document.getElementById('customPopupMessage');
+        const confirmBtn = document.getElementById('customPopupConfirm');
+        const cancelBtn = document.getElementById('customPopupCancel');
+
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        confirmBtn.textContent = confirmText;
+        cancelBtn.textContent = cancelText;
+        cancelBtn.classList.toggle('hidden', !isConfirm);
+
+        modal.classList.remove('hidden');
+
+        return new Promise((resolve) => {
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+            };
+
+            confirmBtn.onclick = () => {
+                cleanup();
+                resolve(true);
+            };
+
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(false);
+            };
+        });
+    }
+
     // Set current date
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
     document.getElementById('currentDate').textContent = 
@@ -140,7 +191,15 @@
     }
     
     async function finalizePrescription() {
-        if (!confirm('Finalize this prescription? This will mark consultation as completed.')) {
+        const shouldFinalize = await showCustomPopup({
+            title: 'Finalize Prescription',
+            message: 'Finalize this prescription? This will mark consultation as completed.',
+            confirmText: 'Yes, Finalize',
+            cancelText: 'Cancel',
+            isConfirm: true
+        });
+
+        if (!shouldFinalize) {
             return;
         }
 
@@ -173,7 +232,10 @@
             window.navigateWithTransition(data.redirect_url || '/thank-you');
         } catch (error) {
             console.error('Finalize failed:', error);
-            alert(`Failed to finalize: ${error.message}`);
+            await showCustomPopup({
+                title: 'Finalization Failed',
+                message: `Failed to finalize: ${error.message}`
+            });
         }
     }
     

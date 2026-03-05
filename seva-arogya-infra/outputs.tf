@@ -22,6 +22,16 @@ output "acm_dns_validation_record" {
   }, {})
 }
 
+output "route53_zone_id" {
+  description = "Effective Route53 hosted zone ID used for DNS records"
+  value       = local.effective_route53_zone_id
+}
+
+output "route53_name_servers" {
+  description = "Route53 nameservers to set at the registrar when create_route53_zone=true"
+  value       = try(aws_route53_zone.primary[0].name_servers, [])
+}
+
 output "audio_bucket_name" {
   description = "S3 bucket name for audio storage"
   value       = module.s3_audio.bucket_id
@@ -84,4 +94,14 @@ output "transcribe_endpoint" {
 output "transcribe_streaming_endpoint" {
   description = "AWS Transcribe streaming service endpoint URL"
   value       = "https://transcribestreaming.${var.aws_region}.amazonaws.com"
+}
+
+output "prescription_pdf_lambda_name" {
+  description = "Prescription PDF Lambda function name"
+  value       = try(aws_lambda_function.prescription_pdf[0].function_name, "")
+}
+
+output "prescription_pdf_lambda_arn" {
+  description = "Prescription PDF Lambda function ARN"
+  value       = try(aws_lambda_function.prescription_pdf[0].arn, "")
 }

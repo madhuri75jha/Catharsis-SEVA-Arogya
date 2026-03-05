@@ -13,6 +13,7 @@ This infrastructure provisions:
 - **Cognito**: User Pool for authentication
 - **Secrets Manager**: Secure storage for database credentials and app secrets
 - **IAM**: Least-privilege roles for ECS tasks
+- **Lambda**: Prescription PDF generator function with S3 + CloudWatch permissions
 
 ## Prerequisites
 
@@ -75,8 +76,11 @@ ENABLE_HTTPS=false
 # Option A: Use an existing ACM cert:
 #   CERTIFICATE_ARN=arn:aws:acm:us-east-1:123456789012:certificate/...
 # Option B: Request a new ACM cert (DNS validation):
-#   ACM_DOMAIN_NAME=api.example.com
-#   ACM_ZONE_ID=Z123EXAMPLE
+#   ACM_DOMAIN_NAME=sevaarogya.in
+#   CREATE_ROUTE53_ZONE=true
+#   ROUTE53_ZONE_NAME=sevaarogya.in
+#   CREATE_WWW_RECORD=true
+#   ACM_ZONE_ID=   # optional override when zone already exists
 
 # Container Image (update after pushing to ECR)
 CONTAINER_IMAGE=<account-id>.dkr.ecr.us-east-1.amazonaws.com/seva-arogya-dev-backend:latest
@@ -99,7 +103,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5000
 LOG_LEVEL=INFO
 ```
 
-**HTTPS note:** If you request a new ACM certificate via `ACM_DOMAIN_NAME` and `ACM_ZONE_ID`, run Terraform once with `ENABLE_HTTPS=false` to create/validate the cert. After the cert is issued, set `ENABLE_HTTPS=true` and apply again.
+**HTTPS note:** If you request a new ACM certificate via `ACM_DOMAIN_NAME`, run Terraform once with `ENABLE_HTTPS=false` to create Route53 + validation records. Then update registrar nameservers from `terraform output route53_name_servers`. After DNS propagates and cert is issued, set `ENABLE_HTTPS=true` and apply again.
 
 ## Deployment Workflow
 
@@ -108,6 +112,8 @@ LOG_LEVEL=INFO
 ```bash
 terraform apply
 ```
+
+If you use `../deploy_to_aws.sh`, it also packages and deploys the prescription PDF Lambda zip automatically before Terraform apply.
 
 ### Step 2: Build and Push Backend Docker Image
 

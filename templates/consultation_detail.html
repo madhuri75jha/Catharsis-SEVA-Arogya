@@ -52,6 +52,146 @@
     
     <!-- Scrollable Content -->
     <div class="flex-1 overflow-y-auto px-6 py-6">
+        <!-- Prescription Section -->
+        {% if consultation.prescription %}
+        <div class="mb-6">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Prescription</h3>
+            {% set ns = namespace(diagnosis='', instructions='', follow_up='') %}
+            {% if consultation.prescription.sections is mapping %}
+                {% set diagnosis_section = consultation.prescription.sections.get('diagnosis', {}) %}
+                {% if diagnosis_section is mapping %}
+                    {% set ns.diagnosis = diagnosis_section.get('diagnosis', '') %}
+                {% elif diagnosis_section %}
+                    {% set ns.diagnosis = diagnosis_section %}
+                {% endif %}
+
+                {% set instructions_section = consultation.prescription.sections.get('clinical_notes', {}) %}
+                {% if instructions_section is mapping %}
+                    {% set ns.instructions = instructions_section.get('clinical_notes', '') %}
+                {% elif instructions_section %}
+                    {% set ns.instructions = instructions_section %}
+                {% endif %}
+
+                {% set followup_section = consultation.prescription.sections.get('follow_up', {}) %}
+                {% if followup_section is mapping %}
+                    {% set ns.follow_up = followup_section.get('follow_up', '') %}
+                {% elif followup_section %}
+                    {% set ns.follow_up = followup_section %}
+                {% endif %}
+            {% elif consultation.prescription.sections and consultation.prescription.sections|length > 0 %}
+                {% for section in consultation.prescription.sections %}
+                    {% set section_key = (section.key or '')|lower %}
+                    {% if section_key == 'diagnosis' and section.content %}
+                        {% set ns.diagnosis = section.content %}
+                    {% elif section_key == 'instructions' and section.content %}
+                        {% set ns.instructions = section.content %}
+                    {% elif section_key == 'follow_up' and section.content %}
+                        {% set ns.follow_up = section.content %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+
+            <div class="relative bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div class="rx-watermark">Rx</div>
+
+                <div class="flex items-start justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                        <p class="text-primary text-sm font-bold">Final Prescription Snapshot</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                            #{{ consultation.prescription.prescription_id }}
+                            {% if consultation.prescription.finalized_at %}
+                            · {{ consultation.prescription.finalized_at.strftime('%b %d, %Y %I:%M %p') if consultation.prescription.finalized_at.strftime else consultation.prescription.finalized_at }}
+                            {% endif %}
+                        </p>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        {% if consultation.prescription.state %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold
+                            {% if consultation.prescription.state == 'Finalized' %}bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400
+                            {% elif consultation.prescription.state == 'InProgress' %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400
+                            {% elif consultation.prescription.state == 'Draft' %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300
+                            {% else %}bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400{% endif %}">
+                            {{ consultation.prescription.state }}
+                        </span>
+                        {% endif %}
+
+                        <button
+                            id="print-prescription-pdf-btn"
+                            data-prescription-id="{{ consultation.prescription.prescription_id }}"
+                            class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            type="button"
+                            title="Print Prescription PDF">
+                            <span class="material-symbols-outlined text-[18px]">print</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Patient</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white mt-1">
+                        {{ consultation.prescription.patient_name or consultation.patient_name or 'Unknown Patient' }}
+                    </p>
+                </div>
+
+                {% if ns.diagnosis %}
+                <div class="mb-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Diagnosis</p>
+                    <div class="mt-1 border-l-4 border-primary bg-primary/5 p-3 rounded-r-lg">
+                        <p class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{{ ns.diagnosis }}</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Medications</p>
+                    </div>
+                    {% if consultation.prescription.medications and consultation.prescription.medications|length > 0 %}
+                    <div class="overflow-hidden rounded-lg border border-slate-100 dark:border-slate-800">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 font-bold">
+                                    <th class="p-2.5">Medicine</th>
+                                    <th class="p-2.5">Dose</th>
+                                    <th class="p-2.5 text-center">Freq</th>
+                                    <th class="p-2.5 text-right">Dur</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                {% for medication in consultation.prescription.medications %}
+                                <tr>
+                                    <td class="p-2.5 text-sm text-slate-800 dark:text-slate-200">{{ medication.name if medication.name else 'Medication' }}</td>
+                                    <td class="p-2.5 text-xs text-slate-600 dark:text-slate-400">{{ medication.dosage if medication.dosage else '-' }}</td>
+                                    <td class="p-2.5 text-center text-xs text-slate-600 dark:text-slate-400">{{ medication.frequency if medication.frequency else '-' }}</td>
+                                    <td class="p-2.5 text-right text-xs text-slate-600 dark:text-slate-400">{{ medication.duration if medication.duration else '-' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-xs text-slate-500 dark:text-slate-400 italic">No medications listed</p>
+                    {% endif %}
+                </div>
+
+                {% if ns.instructions %}
+                <div class="mb-3">
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Instructions</p>
+                    <p class="mt-1 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ ns.instructions }}</p>
+                </div>
+                {% endif %}
+
+                {% if ns.follow_up %}
+                <div>
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Follow-up</p>
+                    <p class="mt-1 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ ns.follow_up }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Transcript Section -->
         <div class="mb-6">
             <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Transcript</h3>
@@ -137,91 +277,6 @@
         </div>
         {% endif %}
         
-        <!-- Prescription Section -->
-        {% if consultation.prescription %}
-        <div class="mb-6">
-            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Prescription</h3>
-            <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-                <div class="flex items-center justify-between mb-3">
-                    <p class="text-xs text-slate-500 dark:text-slate-400">
-                        #{{ consultation.prescription.prescription_id }}
-                    </p>
-                    {% if consultation.prescription.state %}
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold
-                        {% if consultation.prescription.state == 'Finalized' %}bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400
-                        {% elif consultation.prescription.state == 'InProgress' %}bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400
-                        {% elif consultation.prescription.state == 'Draft' %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300
-                        {% else %}bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400{% endif %}">
-                        {{ consultation.prescription.state }}
-                    </span>
-                    {% endif %}
-                </div>
-
-                {% if consultation.prescription.sections and consultation.prescription.sections|length > 0 %}
-                <div class="space-y-3 mb-4">
-                    {% for section in consultation.prescription.sections %}
-                    {% if section.content %}
-                    <div>
-                        <p class="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
-                            {{ section.title if section.title else section.key }}
-                        </p>
-                        <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap mt-1">{{ section.content }}</p>
-                    </div>
-                    {% endif %}
-                    {% endfor %}
-                </div>
-                {% endif %}
-
-                {% if consultation.prescription.medications and consultation.prescription.medications|length > 0 %}
-                <div class="space-y-3">
-                    {% for medication in consultation.prescription.medications %}
-                    <div class="flex items-start">
-                        <span class="material-symbols-outlined text-primary text-[20px] mr-3 mt-0.5">medication</span>
-                        <div class="flex-1">
-                            <p class="text-sm font-semibold text-slate-800 dark:text-white">
-                                {{ medication.name if medication.name else 'Medication' }}
-                            </p>
-                            {% if medication.dosage %}
-                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                Dosage: {{ medication.dosage }}
-                            </p>
-                            {% endif %}
-                            {% if medication.frequency %}
-                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                Frequency: {{ medication.frequency }}
-                            </p>
-                            {% endif %}
-                            {% if medication.duration %}
-                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                Duration: {{ medication.duration }}
-                            </p>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% if not loop.last %}
-                    <div class="border-t border-slate-200 dark:border-slate-800"></div>
-                    {% endif %}
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="text-sm text-slate-500 dark:text-slate-400 italic">No medications listed</p>
-                {% endif %}
-
-                {% if consultation.prescription.state == 'Finalized' %}
-                <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <button
-                        id="download-prescription-pdf-btn"
-                        data-prescription-id="{{ consultation.prescription.prescription_id }}"
-                        class="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-                        type="button">
-                        <span class="material-symbols-outlined text-[20px]">download</span>
-                        <span>Download Prescription PDF</span>
-                    </button>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
     </div>
     
     <!-- Bottom Navigation -->
@@ -241,7 +296,7 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const downloadBtn = document.getElementById('download-prescription-pdf-btn');
+    const downloadBtn = document.getElementById('print-prescription-pdf-btn');
     if (!downloadBtn) return;
 
     downloadBtn.addEventListener('click', async () => {
@@ -249,7 +304,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!prescriptionId) return;
 
         downloadBtn.disabled = true;
-        downloadBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span><span>Generating PDF...</span>';
+        const originalButtonHtml = downloadBtn.innerHTML;
+        downloadBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>';
 
         try {
             const response = await fetch(`/api/v1/prescriptions/${prescriptionId}/pdf`, {
@@ -267,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('An error occurred while generating the PDF');
         } finally {
             downloadBtn.disabled = false;
-            downloadBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">download</span><span>Download Prescription PDF</span>';
+            downloadBtn.innerHTML = originalButtonHtml;
         }
     });
 });
@@ -282,6 +338,17 @@ document.addEventListener('DOMContentLoaded', () => {
     .no-scrollbar {
         -ms-overflow-style: none;
         scrollbar-width: none;
+    }
+
+    .rx-watermark {
+        position: absolute;
+        top: 10px;
+        right: 16px;
+        font-size: 54px;
+        font-weight: 700;
+        color: rgba(18, 122, 226, 0.07);
+        pointer-events: none;
+        user-select: none;
     }
 </style>
 {% endblock %}

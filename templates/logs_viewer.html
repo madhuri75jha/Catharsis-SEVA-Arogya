@@ -3,35 +3,39 @@
 {% block title %}SEVA Arogya - CloudWatch Logs{% endblock %}
 
 {% block content %}
-<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+<div class="log-shell relative flex h-screen w-full max-w-[1200px] mx-auto flex-col overflow-hidden shadow-2xl">
     <!-- Header -->
-    <div class="px-6 pt-12 pb-4 border-b border-slate-100 dark:border-slate-800">
+    <div class="px-6 pt-12 pb-4 border-b border-cyan-500/20 bg-slate-950/80">
         <div class="flex items-center justify-between mb-4">
-            <button onclick="window.navigateWithTransition('/home')" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            <button onclick="window.navigateWithTransition('/home')" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-900 text-cyan-300 border border-cyan-500/30 hover:bg-slate-800 transition-colors">
                 <span class="material-symbols-outlined text-[20px]">arrow_back</span>
             </button>
-            <h1 class="text-xl font-bold text-slate-800 dark:text-white">CloudWatch Logs</h1>
-            <button id="refresh-btn" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            <div class="text-center">
+                <h1 class="text-xl font-bold text-cyan-300 tracking-wide">CloudWatch Logs</h1>
+                <p class="text-[10px] uppercase tracking-[0.2em] text-cyan-500/80">Realtime Console</p>
+            </div>
+            <button id="refresh-btn" class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-900 text-cyan-300 border border-cyan-500/30 hover:bg-slate-800 transition-colors">
                 <span class="material-symbols-outlined text-[20px]">refresh</span>
             </button>
         </div>
         
         <!-- Search Input -->
         <div class="relative">
-            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">search</span>
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500 text-[20px]">search</span>
             <input 
                 id="search-input"
-                class="w-full bg-slate-50 dark:bg-slate-900 border-none rounded-xl py-3 pl-10 pr-4 text-sm text-slate-600 dark:text-slate-300 placeholder-slate-400 focus:ring-2 focus:ring-primary/20 transition-all" 
+                class="w-full bg-slate-900/90 border border-cyan-500/20 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/40 transition-all" 
                 placeholder="Search logs..." 
                 type="text"
             />
         </div>
+        <p class="mt-2 text-[10px] uppercase tracking-[0.18em] text-cyan-400/70">Order: newest to oldest</p>
     </div>
     
     <!-- Filters -->
-    <div class="px-6 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+    <div class="px-6 py-3 border-b border-cyan-500/10 bg-slate-950/70">
         <div class="flex gap-2 overflow-x-auto no-scrollbar">
-            <select id="time-range-filter" class="text-xs px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-primary/20 outline-none">
+            <select id="time-range-filter" class="text-xs px-3 py-2 rounded-lg bg-slate-900 border border-cyan-500/30 text-cyan-200 focus:ring-2 focus:ring-cyan-400/30 outline-none">
                 <option value="1">Last 1 hour</option>
                 <option value="6">Last 6 hours</option>
                 <option value="24" selected>Last 24 hours</option>
@@ -39,7 +43,7 @@
                 <option value="168">Last 7 days</option>
             </select>
             
-            <label class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer">
+            <label class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-slate-900 border border-cyan-500/30 text-cyan-200 cursor-pointer">
                 <input id="auto-refresh-toggle" type="checkbox" class="rounded text-primary focus:ring-primary" />
                 <span>Auto-refresh</span>
             </label>
@@ -50,7 +54,7 @@
     <div id="loading-state" class="flex-1 flex items-center justify-center">
         <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            <p class="mt-2 text-sm text-slate-500">Loading logs...</p>
+            <p class="mt-2 text-sm text-cyan-200/80">Loading logs...</p>
         </div>
     </div>
     
@@ -66,8 +70,8 @@
     <!-- Empty State -->
     <div id="empty-state" class="hidden flex-1 flex items-center justify-center">
         <div class="text-center px-6">
-            <span class="material-symbols-outlined text-[64px] text-slate-300 dark:text-slate-700">description</span>
-            <p class="mt-2 text-sm text-slate-500">No logs found</p>
+            <span class="material-symbols-outlined text-[64px] text-cyan-600/60">terminal</span>
+            <p class="mt-2 text-sm text-cyan-200/70">No logs found</p>
         </div>
     </div>
     
@@ -79,7 +83,7 @@
         
         <!-- Load More Button -->
         <div id="load-more-container" class="hidden px-6 py-4">
-            <button id="load-more-btn" class="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            <button id="load-more-btn" class="w-full py-2 bg-slate-900 border border-cyan-500/35 text-cyan-200 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
                 Load More
             </button>
         </div>
@@ -94,6 +98,13 @@
 
 {% block extra_css %}
 <style>
+    .log-shell {
+        background:
+            radial-gradient(circle at 10% 5%, rgba(34, 211, 238, 0.16), transparent 40%),
+            radial-gradient(circle at 95% 85%, rgba(16, 185, 129, 0.12), transparent 35%),
+            linear-gradient(180deg, #050816 0%, #020617 100%);
+    }
+
     .no-scrollbar::-webkit-scrollbar {
         display: none;
     }
@@ -103,27 +114,98 @@
     }
     
     .log-entry {
-        @apply bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 text-xs font-mono;
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+        font-size: 0.75rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        border-width: 1px;
+        color: #e2e8f0;
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 6, 23, 0.9) 100%);
+        border-color: rgba(34, 211, 238, 0.15);
+        box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.08);
     }
     
+    .log-entry::before {
+        content: attr(data-row);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        margin-bottom: 8px;
+        border-radius: 9999px;
+        font-size: 10px;
+        color: #67e8f9;
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 47, 73, 0.35);
+    }
+
+    .log-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
     .log-timestamp {
-        @apply text-slate-500 dark:text-slate-400 font-semibold mb-1;
+        color: rgba(165, 243, 252, 0.95);
+        font-weight: 600;
     }
     
     .log-message {
-        @apply text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words;
+        color: #ffffff;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.6;
+    }
+
+    .log-level-chip {
+        font-size: 10px;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.375rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        border-width: 1px;
+    }
+
+    .chip-error {
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+        border-color: rgba(248, 113, 113, 0.35);
+    }
+
+    .chip-warning {
+        background: rgba(234, 179, 8, 0.15);
+        color: #fef08a;
+        border-color: rgba(250, 204, 21, 0.35);
+    }
+
+    .chip-info {
+        background: rgba(6, 182, 212, 0.15);
+        color: #a5f3fc;
+        border-color: rgba(34, 211, 238, 0.35);
+    }
+
+    .chip-debug {
+        background: rgba(139, 92, 246, 0.15);
+        color: #ddd6fe;
+        border-color: rgba(167, 139, 250, 0.35);
     }
     
     .log-level-error {
-        @apply border-l-4 border-red-500 bg-red-50 dark:bg-red-900/20;
+        border-color: rgba(239, 68, 68, 0.4);
+        box-shadow: inset 3px 0 0 rgba(239, 68, 68, 0.75);
     }
     
     .log-level-warning {
-        @apply border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20;
+        border-color: rgba(234, 179, 8, 0.4);
+        box-shadow: inset 3px 0 0 rgba(234, 179, 8, 0.75);
     }
     
     .log-level-info {
-        @apply border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20;
+        border-color: rgba(6, 182, 212, 0.35);
+        box-shadow: inset 3px 0 0 rgba(6, 182, 212, 0.65);
     }
 </style>
 {% endblock %}

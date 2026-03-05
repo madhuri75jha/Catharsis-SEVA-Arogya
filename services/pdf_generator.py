@@ -87,14 +87,14 @@ class PDFGenerator:
             
             # Upload to S3
             prescription_id = prescription['prescription_id']
-            s3_key = f"prescriptions/{prescription_id}/prescription_{prescription_id}.pdf"
-            
-            success = self.storage.upload_pdf(pdf_bytes, s3_key)
-            if success:
-                logger.info(f"PDF generated and uploaded: {s3_key}")
-                return s3_key
+            owner_id = prescription.get('user_id') or prescription.get('created_by_doctor_id') or 'system'
+
+            uploaded_key = self.storage.upload_pdf(pdf_bytes, str(owner_id), str(prescription_id))
+            if uploaded_key:
+                logger.info(f"PDF generated and uploaded: {uploaded_key}")
+                return uploaded_key
             else:
-                logger.error(f"Failed to upload PDF to S3: {s3_key}")
+                logger.error(f"Failed to upload PDF to S3 for prescription {prescription_id}")
                 return None
                 
         except Exception as e:
