@@ -19,15 +19,17 @@ hospital_bp = Blueprint('hospitals', __name__, url_prefix='/api/v1')
 rbac_service = None
 database_manager = None
 cloudwatch_service = None
+cognito_auth_manager = None
 HOSPITAL_CONFIG_DIR = Path('config/hospitals')
 
 
-def init_hospital_routes(rbac_svc, db_manager, cw_service=None):
+def init_hospital_routes(rbac_svc, db_manager, cw_service=None, auth_svc=None):
     """Initialize hospital routes with service instances"""
-    global rbac_service, database_manager, cloudwatch_service
+    global rbac_service, database_manager, cloudwatch_service, cognito_auth_manager
     rbac_service = rbac_svc
     database_manager = db_manager
     cloudwatch_service = cw_service
+    cognito_auth_manager = auth_svc
     logger.info("Hospital routes initialized")
 
 
@@ -357,7 +359,7 @@ def generate_default_prescription_config(hospital_id):
 @hospital_bp.route('/hospitals/<hospital_id>/doctors', methods=['GET'])
 @login_required
 def get_hospital_doctors(hospital_id):
-    """Get list of doctors in a hospital"""
+    """Get list of doctors and approval statuses in a hospital."""
     try:
         user_id = session.get('user_id')
         user_role = rbac_service.get_user_role(user_id)
@@ -370,10 +372,20 @@ def get_hospital_doctors(hospital_id):
             return jsonify({'success': False, 'message': 'Forbidden'}), 403
         
         query = """
-        SELECT doctor_id, name, specialty, signature_url, availability, created_at
-        FROM doctors
-        WHERE hospital_id = %s
-        ORDER BY name ASC
+        SELECT
+            COALESCE(ur.user_id, d.doctor_id) AS doctor_id,
+            COALESCE(NULLIF(d.name, ''), SPLIT_PART(COALESCE(ur.user_id, d.doctor_id), '@', 1)) AS name,
+            d.specialty,
+            d.signature_url,
+            d.availability,
+            COALESCE(d.created_at, ur.created_at) AS created_at,
+            COALESCE(ur.approval_status, 'Unregistered') AS approval_status
+        FROM doctors d
+        FULL OUTER JOIN user_roles ur
+            ON ur.user_id = d.doctor_id
+           AND ur.role = 'Doctor'
+        WHERE COALESCE(ur.hospital_id, d.hospital_id) = %s
+        ORDER BY 2 ASC
         """
         
         results = database_manager.execute_with_retry(query, (hospital_id,))
@@ -387,7 +399,8 @@ def get_hospital_doctors(hospital_id):
                     'specialty': row[2],
                     'signature_url': row[3],
                     'availability': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'created_at': row[5].isoformat() if row[5] else None,
+                    'approval_status': row[6]
                 })
         
         return jsonify({
@@ -403,7 +416,7 @@ def get_hospital_doctors(hospital_id):
 @hospital_bp.route('/hospitals/<hospital_id>/doctors', methods=['POST'])
 @login_required
 def add_hospital_doctor(hospital_id):
-    """Add doctor to hospital"""
+    """Add an existing system doctor to hospital and approve association."""
     try:
         user_id = session.get('user_id')
         user_role = rbac_service.get_user_role(user_id)
@@ -415,36 +428,141 @@ def add_hospital_doctor(hospital_id):
         elif user_role == 'Doctor':
             return jsonify({'success': False, 'message': 'Forbidden'}), 403
         
-        data = request.get_json()
-        doctor_id = data.get('doctor_id', '')
-        name = data.get('name', '')
-        specialty = data.get('specialty', '')
+        data = request.get_json(silent=True) or {}
+        doctor_id = (data.get('doctor_id', '') or '').strip().lower()
         
-        if not doctor_id or not name:
-            return jsonify({'success': False, 'message': 'doctor_id and name required'}), 400
-        
+        if not doctor_id:
+            return jsonify({'success': False, 'message': 'doctor_id is required'}), 400
+
+        doctor_role_query = """
+        SELECT user_id, hospital_id
+        FROM user_roles
+        WHERE LOWER(user_id) = LOWER(%s) AND role = 'Doctor'
+        LIMIT 1
+        """
+        doctor_role = database_manager.execute_with_retry(doctor_role_query, (doctor_id,))
+
+        if not doctor_role and cognito_auth_manager:
+            cognito_user = cognito_auth_manager.get_user_by_username(doctor_id)
+            if cognito_user:
+                cognito_attrs = cognito_user.get('attributes', {})
+                if cognito_attrs.get('custom:role') == 'Doctor':
+                    from utils.auth_helpers import sync_user_role_from_cognito
+                    sync_user_role_from_cognito(
+                        database_manager,
+                        cognito_user,
+                        (cognito_user.get('username') or doctor_id).lower()
+                    )
+                    doctor_role = database_manager.execute_with_retry(doctor_role_query, (doctor_id,))
+
+        if not doctor_role:
+            return jsonify({
+                'success': False,
+                'message': 'Doctor is not registered in the system. Ask them to sign up first.'
+            }), 404
+
+        doctor_user_id = doctor_role[0][0]
+        doctor_hospital_id = doctor_role[0][1]
+        if doctor_hospital_id and doctor_hospital_id != hospital_id:
+            return jsonify({
+                'success': False,
+                'message': f'Doctor is registered under hospital {doctor_hospital_id}.'
+            }), 409
+
+        display_name = doctor_user_id.split('@')[0].replace('.', ' ').title()
+
         query = """
-        INSERT INTO doctors (doctor_id, hospital_id, name, specialty)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO doctors (doctor_id, hospital_id, name)
+        VALUES (%s, %s, %s)
         ON CONFLICT (doctor_id) DO UPDATE
         SET hospital_id = EXCLUDED.hospital_id,
-            name = EXCLUDED.name,
-            specialty = EXCLUDED.specialty,
+            name = COALESCE(NULLIF(EXCLUDED.name, ''), doctors.name),
             updated_at = CURRENT_TIMESTAMP
         """
+
+        role_update_query = """
+        UPDATE user_roles
+        SET hospital_id = %s,
+            approval_status = 'Approved',
+            approved_by = %s,
+            approved_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = %s AND role = 'Doctor'
+        """
         
-        database_manager.execute_with_retry(query, (doctor_id, hospital_id, name, specialty))
+        database_manager.execute_with_retry(query, (doctor_user_id, hospital_id, display_name))
+        database_manager.execute_with_retry(role_update_query, (hospital_id, user_id, doctor_user_id))
         
-        logger.info(f"Doctor {doctor_id} added to hospital {hospital_id}")
+        logger.info(f"Doctor {doctor_user_id} added to hospital {hospital_id}")
         
         return jsonify({
             'success': True,
-            'message': 'Doctor added successfully'
+            'message': 'Doctor added successfully',
+            'approval_status': 'Approved'
         })
         
     except Exception as e:
         logger.error(f"Failed to add doctor to hospital {hospital_id}: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to add doctor'}), 500
+
+
+@hospital_bp.route('/hospitals/<hospital_id>/doctors/<doctor_id>/approve', methods=['POST'])
+@login_required
+def approve_hospital_doctor(hospital_id, doctor_id):
+    """Approve a pending doctor for a hospital."""
+    try:
+        user_id = session.get('user_id')
+        user_role = rbac_service.get_user_role(user_id)
+        user_hospital = rbac_service.get_user_hospital(user_id)
+
+        if user_role == 'HospitalAdmin' and user_hospital != hospital_id:
+            return jsonify({'success': False, 'message': 'Forbidden'}), 403
+        elif user_role == 'Doctor':
+            return jsonify({'success': False, 'message': 'Forbidden'}), 403
+
+        with database_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE user_roles
+                    SET approval_status = 'Approved',
+                        approved_by = %s,
+                        approved_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                      AND role = 'Doctor'
+                      AND hospital_id = %s
+                    RETURNING user_id
+                    """,
+                    (user_id, doctor_id, hospital_id)
+                )
+                updated = cursor.fetchone()
+                if not updated:
+                    conn.rollback()
+                    return jsonify({'success': False, 'message': 'Doctor not found for this hospital'}), 404
+
+                cursor.execute("SELECT name FROM doctors WHERE doctor_id = %s", (doctor_id,))
+                existing_doctor = cursor.fetchone()
+                if not existing_doctor:
+                    default_name = doctor_id.split('@')[0].replace('.', ' ').title()
+                    cursor.execute(
+                        """
+                        INSERT INTO doctors (doctor_id, hospital_id, name)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (doctor_id) DO UPDATE
+                        SET hospital_id = EXCLUDED.hospital_id,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (doctor_id, hospital_id, default_name)
+                    )
+                conn.commit()
+
+        logger.info(f"Doctor {doctor_id} approved for hospital {hospital_id} by {user_id}")
+        return jsonify({'success': True, 'message': 'Doctor approved successfully'})
+
+    except Exception as e:
+        logger.error(f"Failed to approve doctor {doctor_id} for hospital {hospital_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to approve doctor'}), 500
 
 
 @hospital_bp.route('/hospitals/<hospital_id>/doctors/<doctor_id>', methods=['DELETE'])

@@ -151,6 +151,8 @@ class HospitalSettingsManager {
         listEl.innerHTML = '';
         
         this.doctors.forEach(doctor => {
+            const status = doctor.approval_status || 'Unregistered';
+            const canApprove = status === 'Pending';
             const doctorCard = document.createElement('div');
             doctorCard.className = 'bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 flex items-center justify-between';
             doctorCard.innerHTML = `
@@ -158,13 +160,28 @@ class HospitalSettingsManager {
                     <p class="text-sm font-medium text-slate-800 dark:text-white">${this.escapeHtml(doctor.name)}</p>
                     <p class="text-xs text-slate-500">${this.escapeHtml(doctor.specialty || 'No specialty')}</p>
                     <p class="text-xs text-slate-400">${this.escapeHtml(doctor.doctor_id)}</p>
+                    <p class="text-xs mt-1">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${this.getStatusBadgeClass(status)}">
+                            ${this.escapeHtml(status)}
+                        </span>
+                    </p>
                 </div>
-                <button 
-                    onclick="window.hospitalSettings.removeDoctor('${doctor.doctor_id}')"
-                    class="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                >
-                    <span class="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                <div class="flex items-center gap-2">
+                    ${canApprove ? `
+                    <button
+                        onclick="window.hospitalSettings.approveDoctor('${doctor.doctor_id}')"
+                        class="px-2 py-1 text-xs rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                    >
+                        Approve
+                    </button>
+                    ` : ''}
+                    <button 
+                        onclick="window.hospitalSettings.removeDoctor('${doctor.doctor_id}')"
+                        class="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                    >
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
             `;
             listEl.appendChild(doctorCard);
         });
@@ -189,7 +206,7 @@ class HospitalSettingsManager {
             };
             
             if (!data.name) {
-                alert('Hospital name is required');
+                window.showUIPopup('Hospital name is required');
                 return;
             }
             
@@ -204,14 +221,14 @@ class HospitalSettingsManager {
             const result = await response.json();
             
             if (result.success) {
-                alert('Hospital information saved successfully');
+                window.showUIPopup('Hospital information saved successfully');
                 await this.fetchHospital();
             } else {
-                alert(result.message || 'Failed to save hospital information');
+                window.showUIPopup(result.message || 'Failed to save hospital information');
             }
         } catch (error) {
             console.error('Error saving hospital:', error);
-            alert('An error occurred while saving');
+            window.showUIPopup('An error occurred while saving');
         } finally {
             const saveBtn = document.getElementById('save-hospital-btn');
             if (saveBtn) {
@@ -228,8 +245,6 @@ class HospitalSettingsManager {
             
             // Clear form
             document.getElementById('new-doctor-id').value = '';
-            document.getElementById('new-doctor-name').value = '';
-            document.getElementById('new-doctor-specialty').value = '';
         }
     }
     
@@ -243,11 +258,9 @@ class HospitalSettingsManager {
     async confirmAddDoctor() {
         try {
             const doctorId = document.getElementById('new-doctor-id').value.trim();
-            const name = document.getElementById('new-doctor-name').value.trim();
-            const specialty = document.getElementById('new-doctor-specialty').value.trim();
             
-            if (!doctorId || !name) {
-                alert('Doctor ID and Name are required');
+            if (!doctorId) {
+                window.showUIPopup('Doctor ID is required');
                 return;
             }
             
@@ -257,9 +270,7 @@ class HospitalSettingsManager {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    doctor_id: doctorId,
-                    name: name,
-                    specialty: specialty
+                    doctor_id: doctorId
                 })
             });
             
@@ -269,11 +280,29 @@ class HospitalSettingsManager {
                 this.cancelAddDoctor();
                 await this.fetchDoctors();
             } else {
-                alert(data.message || 'Failed to add doctor');
+                window.showUIPopup(data.message || 'Failed to add doctor');
             }
         } catch (error) {
             console.error('Error adding doctor:', error);
-            alert('An error occurred while adding doctor');
+            window.showUIPopup('An error occurred while adding doctor');
+        }
+    }
+
+    async approveDoctor(doctorId) {
+        try {
+            const response = await fetch(`/api/v1/hospitals/${this.hospitalId}/doctors/${doctorId}/approve`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                await this.fetchDoctors();
+            } else {
+                window.showUIPopup(data.message || 'Failed to approve doctor');
+            }
+        } catch (error) {
+            console.error('Error approving doctor:', error);
+            window.showUIPopup('An error occurred while approving doctor');
         }
     }
     
@@ -292,11 +321,11 @@ class HospitalSettingsManager {
             if (data.success) {
                 await this.fetchDoctors();
             } else {
-                alert(data.message || 'Failed to remove doctor');
+                window.showUIPopup(data.message || 'Failed to remove doctor');
             }
         } catch (error) {
             console.error('Error removing doctor:', error);
-            alert('An error occurred while removing doctor');
+            window.showUIPopup('An error occurred while removing doctor');
         }
     }
     
@@ -333,6 +362,19 @@ class HospitalSettingsManager {
             developerNav?.classList.add('hidden');
         }
     }
+
+    getStatusBadgeClass(status) {
+        if (status === 'Approved') {
+            return 'bg-emerald-100 text-emerald-700';
+        }
+        if (status === 'Pending') {
+            return 'bg-amber-100 text-amber-700';
+        }
+        if (status === 'Rejected') {
+            return 'bg-red-100 text-red-700';
+        }
+        return 'bg-slate-200 text-slate-700';
+    }
     
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -345,3 +387,4 @@ class HospitalSettingsManager {
 document.addEventListener('DOMContentLoaded', () => {
     window.hospitalSettings = new HospitalSettingsManager();
 });
+

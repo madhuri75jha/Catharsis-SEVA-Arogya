@@ -91,6 +91,20 @@
     
     <!-- Transition Overlay Component -->
     {% include 'components/transition_overlay.html' %}
+
+    <!-- Global Popup Alert -->
+    <div id="global-popup-alert" class="hidden fixed inset-0 z-[100] flex items-center justify-center px-6">
+        <div id="global-popup-backdrop" class="absolute inset-0 bg-black/45"></div>
+        <div class="relative w-full max-w-sm rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-2xl">
+            <h3 id="global-popup-title" class="text-base font-semibold text-slate-900 dark:text-slate-100">Notice</h3>
+            <p id="global-popup-message" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+            <div class="mt-4 flex justify-end">
+                <button id="global-popup-ok" type="button" class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
     
     {% block content %}{% endblock %}
     
@@ -107,6 +121,47 @@
     
     <!-- Transition Overlay JavaScript -->
     <script src="{{ url_for('static', filename='js/transition_overlay.js') }}"></script>
+
+    <script>
+        (function initGlobalPopupAlert() {
+            const popup = document.getElementById('global-popup-alert');
+            const backdrop = document.getElementById('global-popup-backdrop');
+            const titleEl = document.getElementById('global-popup-title');
+            const messageEl = document.getElementById('global-popup-message');
+            const okBtn = document.getElementById('global-popup-ok');
+
+            if (!popup || !backdrop || !titleEl || !messageEl || !okBtn) {
+                return;
+            }
+
+            let closeHandler = null;
+            const closePopup = () => {
+                popup.classList.add('hidden');
+                if (typeof closeHandler === 'function') {
+                    closeHandler();
+                    closeHandler = null;
+                }
+            };
+
+            okBtn.addEventListener('click', closePopup);
+            backdrop.addEventListener('click', closePopup);
+
+            window.showUIPopup = function(message, options = {}) {
+                const popupTitle = options.title || 'Notice';
+                titleEl.textContent = String(popupTitle);
+                messageEl.textContent = String(message || '');
+                popup.classList.remove('hidden');
+                return new Promise((resolve) => {
+                    closeHandler = resolve;
+                });
+            };
+
+            // Keep backward compatibility for any remaining alert() call.
+            window.alert = function(message) {
+                window.showUIPopup(message);
+            };
+        })();
+    </script>
     
     {% block extra_js %}{% endblock %}
 </body>

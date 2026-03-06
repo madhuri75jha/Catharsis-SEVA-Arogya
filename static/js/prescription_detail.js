@@ -227,6 +227,32 @@ class PrescriptionDetailManager {
     
     async handleDownloadPDF() {
         try {
+            const optionsResponse = await fetch(`/api/v1/prescriptions/${this.prescriptionId}/pdf-options`);
+            const optionsData = await optionsResponse.json();
+            if (!optionsResponse.ok || !optionsData.success) {
+                window.showUIPopup(optionsData.message || 'Failed to load PDF options');
+                return;
+            }
+
+            let selectedLanguage = {
+                code: optionsData.default_language_code || 'en',
+                name: optionsData.default_language_name || 'English'
+            };
+            if (optionsData.requires_language_selection) {
+                if (typeof window.showPrescriptionLanguagePicker !== 'function') {
+                    window.showUIPopup('Language picker is unavailable');
+                    return;
+                }
+                const picked = await window.showPrescriptionLanguagePicker(
+                    optionsData.languages || [],
+                    selectedLanguage.code
+                );
+                if (!picked) {
+                    return;
+                }
+                selectedLanguage = picked;
+            }
+
             const downloadBtn = document.getElementById('download-pdf-btn');
             if (downloadBtn) {
                 downloadBtn.disabled = true;
@@ -234,7 +260,14 @@ class PrescriptionDetailManager {
             }
             
             const response = await fetch(`/api/v1/prescriptions/${this.prescriptionId}/pdf`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    language_code: selectedLanguage.code || 'en',
+                    language_name: selectedLanguage.name || 'English'
+                })
             });
             
             const data = await response.json();
@@ -243,11 +276,11 @@ class PrescriptionDetailManager {
                 // Open PDF in new tab
                 window.open(data.download_url, '_blank');
             } else {
-                alert(data.message || 'Failed to generate PDF');
+                window.showUIPopup(data.message || 'Failed to generate PDF');
             }
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert('An error occurred while generating the PDF');
+            window.showUIPopup('An error occurred while generating the PDF');
         } finally {
             const downloadBtn = document.getElementById('download-pdf-btn');
             if (downloadBtn) {
@@ -276,11 +309,11 @@ class PrescriptionDetailManager {
                 // Reload page to show updated state
                 window.location.reload();
             } else {
-                alert(data.message || 'Failed to delete prescription');
+                window.showUIPopup(data.message || 'Failed to delete prescription');
             }
         } catch (error) {
             console.error('Error deleting prescription:', error);
-            alert('An error occurred while deleting the prescription');
+            window.showUIPopup('An error occurred while deleting the prescription');
         } finally {
             this.cancelDelete();
         }
@@ -309,11 +342,11 @@ class PrescriptionDetailManager {
                 // Reload page to show updated state
                 window.location.reload();
             } else {
-                alert(data.message || 'Failed to restore prescription');
+                window.showUIPopup(data.message || 'Failed to restore prescription');
             }
         } catch (error) {
             console.error('Error restoring prescription:', error);
-            alert('An error occurred while restoring the prescription');
+            window.showUIPopup('An error occurred while restoring the prescription');
         }
     }
     
@@ -385,3 +418,4 @@ document.addEventListener('DOMContentLoaded', () => {
         window.prescriptionManager = new PrescriptionDetailManager(prescriptionId);
     }
 });
+

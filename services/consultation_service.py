@@ -16,6 +16,8 @@ class ConsultationService:
         user_id: str,
         db_manager: DatabaseManager,
         limit: int = 10,
+        user_role: Optional[str] = None,
+        hospital_id: Optional[str] = None,
         search: Optional[str] = None,
         status: Optional[str] = None,
         start_date: Optional[str] = None,
@@ -32,6 +34,8 @@ class ConsultationService:
             user_id: ID of the authenticated user
             db_manager: DatabaseManager instance for database access
             limit: Maximum number of consultations to retrieve (default: 10, max: 50)
+            user_role: Requester role for scope filtering
+            hospital_id: Requester hospital_id for HospitalAdmin scope
             
         Returns:
             List of consultation dictionaries with fields:
@@ -104,12 +108,34 @@ class ConsultationService:
         """
         
         try:
-            where_clauses = ["c.user_id = %s"]
-            params: List[Any] = [user_id]
+            where_clauses = []
+            params: List[Any] = []
+
+            if user_role == 'DeveloperAdmin':
+                where_clauses.append("1=1")
+            elif user_role == 'HospitalAdmin':
+                where_clauses.append(
+                    """
+                    EXISTS (
+                        SELECT 1
+                        FROM user_roles ur
+                        WHERE ur.user_id = c.user_id
+                          AND ur.role = 'Doctor'
+                          AND ur.hospital_id = %s
+                    )
+                    """
+                )
+                params.append(hospital_id or '')
+            else:
+                where_clauses.append("c.user_id = %s")
+                params.append(user_id)
 
             if status:
                 where_clauses.append("UPPER(c.status) = %s")
                 params.append(status.upper())
+            else:
+                # Hide soft-deleted consultations unless explicitly requested.
+                where_clauses.append("UPPER(COALESCE(c.status, '')) <> 'DELETED'")
 
             if start_date:
                 try:

@@ -17,6 +17,8 @@ locals {
   effective_route53_zone_id = var.acm_zone_id != "" ? var.acm_zone_id : (local.use_auto_route53_zone ? aws_route53_zone.primary[0].zone_id : "")
   www_domain_name           = var.create_www_record && var.acm_domain_name != "" && !startswith(var.acm_domain_name, "www.") ? "www.${var.acm_domain_name}" : ""
   cert_validation_domains   = local.www_domain_name != "" ? toset([var.acm_domain_name, local.www_domain_name]) : toset([var.acm_domain_name])
+  # Request/manage ACM cert only when a domain is provided and no external cert ARN is supplied.
+  manage_acm_certificate    = var.acm_domain_name != "" && var.certificate_arn == ""
 }
 
 # Optional Route53 hosted zone creation (for new domains)
@@ -33,7 +35,7 @@ resource "aws_route53_zone" "primary" {
 
 # ACM Certificate (optional; requires a domain you control)
 resource "aws_acm_certificate" "alb" {
-  count             = var.acm_domain_name != "" ? 1 : 0
+  count             = local.manage_acm_certificate ? 1 : 0
   domain_name       = var.acm_domain_name
   subject_alternative_names = local.www_domain_name != "" ? [local.www_domain_name] : []
   validation_method = "DNS"
@@ -47,7 +49,7 @@ resource "aws_acm_certificate" "alb" {
 
 # DNS validation (optional; only if a hosted zone is provided)
 resource "aws_route53_record" "alb_cert_validation" {
-  for_each = var.acm_domain_name != "" && local.has_route53_zone ? { for domain in local.cert_validation_domains : domain => domain } : {}
+  for_each = local.manage_acm_certificate && local.has_route53_zone ? { for domain in local.cert_validation_domains : domain => domain } : {}
   zone_id = local.effective_route53_zone_id
 
   name = one([
@@ -67,7 +69,7 @@ resource "aws_route53_record" "alb_cert_validation" {
 }
 
 resource "aws_acm_certificate_validation" "alb" {
-  count                   = var.acm_domain_name != "" && local.has_route53_zone ? 1 : 0
+  count                   = local.manage_acm_certificate && local.has_route53_zone ? 1 : 0
   certificate_arn         = aws_acm_certificate.alb[0].arn
   validation_record_fqdns = [for record in aws_route53_record.alb_cert_validation : record.fqdn]
 }
@@ -233,6 +235,13 @@ resource "aws_iam_role_policy" "prescription_pdf_lambda" {
           "s3:GetBucketLocation"
         ]
         Resource = module.s3_pdf.bucket_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "translate:TranslateText"
+        ]
+        Resource = "*"
       }
     ]
   })

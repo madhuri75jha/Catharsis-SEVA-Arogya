@@ -447,6 +447,38 @@ class AuthManager(BaseAWSClient):
             logger.error(f"Unexpected error during token validation: {str(e)}")
             return None
 
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch Cognito user by username/email using AdminGetUser.
+
+        Args:
+            username: Cognito username (email in this app)
+
+        Returns:
+            Dict with username and attributes if found, else None.
+        """
+        try:
+            response = self.client.admin_get_user(
+                UserPoolId=self.user_pool_id,
+                Username=username
+            )
+            return {
+                'username': response.get('Username', username),
+                'attributes': {
+                    attr['Name']: attr['Value']
+                    for attr in response.get('UserAttributes', [])
+                }
+            }
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code in ('UserNotFoundException', 'ResourceNotFoundException'):
+                return None
+            self._log_error('get_user_by_username', e, username=username)
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error fetching Cognito user {username}: {str(e)}")
+            return None
+
     def ensure_role_attributes(
         self,
         access_token: str,

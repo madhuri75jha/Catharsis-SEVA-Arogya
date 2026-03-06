@@ -91,7 +91,7 @@
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Doctors</h2>
                 <button id="add-doctor-btn" class="text-sm text-primary font-medium hover:text-primary/80">
-                    + Add Doctor
+                    + Add Existing Doctor
                 </button>
             </div>
             
@@ -103,7 +103,7 @@
             <!-- Empty State -->
             <div id="doctors-empty" class="hidden text-center py-8">
                 <span class="material-symbols-outlined text-[48px] text-slate-300 dark:text-slate-700">person_off</span>
-                <p class="mt-2 text-sm text-slate-500">No doctors found</p>
+                <p class="mt-2 text-sm text-slate-500">No doctor accounts linked to this hospital</p>
             </div>
         </div>
     </div>
@@ -111,22 +111,15 @@
     <!-- Add Doctor Modal -->
     <div id="add-doctor-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 mx-4 max-w-sm w-full">
-            <h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-4">Add Doctor</h3>
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-2">Add Existing Doctor</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                Doctor must already have an account in the system.
+            </p>
             
             <div class="space-y-3">
                 <div>
                     <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Doctor ID (Email) *</label>
                     <input id="new-doctor-id" type="email" class="ios-input" placeholder="doctor@example.com" />
-                </div>
-                
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Name *</label>
-                    <input id="new-doctor-name" type="text" class="ios-input" placeholder="Dr. John Doe" />
-                </div>
-                
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Specialty</label>
-                    <input id="new-doctor-specialty" type="text" class="ios-input" placeholder="General Medicine" />
                 </div>
             </div>
             

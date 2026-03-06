@@ -377,7 +377,7 @@
             }
 
             if (!currentTranscript || currentTranscript.trim().length === 0) {
-                alert('No transcript available. Please record some audio first.');
+                window.showUIPopup('No transcript available. Please record some audio first.');
                 return;
             }
 
@@ -386,7 +386,7 @@
             });
         } catch (error) {
             console.error('Error during AI extraction:', error);
-            alert('Failed to extract prescription data. Please retry after editing transcript.');
+            window.showUIPopup('Failed to extract prescription data. Please retry after editing transcript.');
         }
     }
 
@@ -453,3 +453,4 @@
     });
 </script>
 {% endblock %}
+

@@ -3,9 +3,11 @@
 {% block title %}Consultation Details - SEVA Arogya{% endblock %}
 
 {% block content %}
-<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+<div class="min-h-screen w-full bg-slate-50 dark:bg-background-dark">
+    <div class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div class="flex min-h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
     <!-- Header Section -->
-    <div class="px-6 pt-8 pb-4 border-b border-slate-100 dark:border-slate-800">
+    <div class="px-4 pt-6 pb-4 sm:px-6 lg:px-8 border-b border-slate-100 dark:border-slate-800">
         <div class="flex items-center mb-4">
             <button onclick="window.navigateWithTransition('/home')" class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                 <span class="material-symbols-outlined text-slate-600 dark:text-slate-400">arrow_back</span>
@@ -13,7 +15,7 @@
             <h1 class="text-xl font-bold text-slate-800 dark:text-white ml-3">Consultation Details</h1>
         </div>
         
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <h2 class="text-2xl font-bold text-slate-900 dark:text-white">
                     {{ consultation.patient_name }}
@@ -40,6 +42,11 @@
                     <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
                     Failed
                 </span>
+                {% elif consultation.status == 'DELETED' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+                    Deleted
+                </span>
                 {% else %}
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400">
                     <span class="w-2 h-2 bg-slate-500 rounded-full mr-2"></span>
@@ -51,7 +58,7 @@
     </div>
     
     <!-- Scrollable Content -->
-    <div class="flex-1 overflow-y-auto px-6 py-6">
+    <div class="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
         <!-- Prescription Section -->
         {% if consultation.prescription %}
         <div class="mb-6">
@@ -280,50 +287,133 @@
     </div>
     
     <!-- Bottom Navigation -->
-    <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800">
-        <button onclick="window.navigateWithTransition('/home')" class="w-full bg-primary text-white font-semibold py-3 px-4 rounded-xl hover:bg-primary/90 active:scale-98 transition-all flex items-center justify-center">
-            <span class="material-symbols-outlined mr-2">arrow_back</span>
-            Back to Home
-        </button>
+    <div class="px-4 py-4 sm:px-6 lg:px-8 border-t border-slate-100 dark:border-slate-800">
+        <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            {% if consultation.status != 'DELETED' %}
+            <button
+                id="delete-consultation-btn"
+                data-consultation-id="{{ consultation.consultation_id }}"
+                class="w-full sm:w-auto bg-red-600 text-white font-semibold py-3 px-4 rounded-xl hover:bg-red-700 active:scale-98 transition-all flex items-center justify-center"
+                type="button">
+                <span class="material-symbols-outlined mr-2">delete</span>
+                Delete Consultation
+            </button>
+            {% endif %}
+            <button onclick="window.navigateWithTransition('/home')" class="w-full sm:w-auto bg-primary text-white font-semibold py-3 px-4 rounded-xl hover:bg-primary/90 active:scale-98 transition-all flex items-center justify-center">
+                <span class="material-symbols-outlined mr-2">arrow_back</span>
+                Back to Home
+            </button>
+        </div>
     </div>
-    
-    <div class="pb-4 flex justify-center">
-        <div class="w-32 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/pdf_language_picker.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const deleteBtn = document.getElementById('delete-consultation-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async () => {
+            const consultationId = deleteBtn.dataset.consultationId;
+            if (!consultationId) return;
+
+            const confirmed = window.confirm('Move this consultation to deleted status?');
+            if (!confirmed) return;
+
+            deleteBtn.disabled = true;
+            const originalDeleteHtml = deleteBtn.innerHTML;
+            deleteBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>';
+
+            try {
+                const response = await fetch(`/api/v1/consultations/${encodeURIComponent(consultationId)}/delete`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    window.showUIPopup('Consultation marked as deleted');
+                    window.navigateWithTransition('/consultations');
+                } else {
+                    window.showUIPopup(data.message || 'Failed to delete consultation');
+                    deleteBtn.disabled = false;
+                    deleteBtn.innerHTML = originalDeleteHtml;
+                }
+            } catch (error) {
+                console.error('Error deleting consultation:', error);
+                window.showUIPopup('An error occurred while deleting the consultation');
+                deleteBtn.disabled = false;
+                deleteBtn.innerHTML = originalDeleteHtml;
+            }
+        });
+    }
+
     const downloadBtn = document.getElementById('print-prescription-pdf-btn');
     if (!downloadBtn) return;
 
     downloadBtn.addEventListener('click', async () => {
         const prescriptionId = downloadBtn.dataset.prescriptionId;
         if (!prescriptionId) return;
-
-        downloadBtn.disabled = true;
         const originalButtonHtml = downloadBtn.innerHTML;
-        downloadBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>';
+        let loadingStarted = false;
 
         try {
+            const optionsResponse = await fetch(`/api/v1/prescriptions/${prescriptionId}/pdf-options`);
+            const optionsData = await optionsResponse.json();
+
+            if (!optionsResponse.ok || !optionsData.success) {
+                window.showUIPopup(optionsData.message || 'Failed to load PDF options');
+                return;
+            }
+
+            let selectedLanguage = {
+                code: optionsData.default_language_code || 'en',
+                name: optionsData.default_language_name || 'English'
+            };
+            if (optionsData.requires_language_selection) {
+                if (typeof window.showPrescriptionLanguagePicker !== 'function') {
+                    window.showUIPopup('Language picker is unavailable');
+                    return;
+                }
+                const picked = await window.showPrescriptionLanguagePicker(
+                    optionsData.languages || [],
+                    selectedLanguage.code
+                );
+                if (!picked) {
+                    return;
+                }
+                selectedLanguage = picked;
+            }
+
+            downloadBtn.disabled = true;
+            loadingStarted = true;
+            downloadBtn.innerHTML = '<span class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>';
+
             const response = await fetch(`/api/v1/prescriptions/${prescriptionId}/pdf`, {
-                method: 'POST'
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language_code: selectedLanguage.code || 'en',
+                    language_name: selectedLanguage.name || 'English'
+                })
             });
             const data = await response.json();
 
             if (data.success && data.download_url) {
                 window.open(data.download_url, '_blank');
             } else {
-                alert(data.message || 'Failed to generate PDF');
+                window.showUIPopup(data.message || 'Failed to generate PDF');
             }
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert('An error occurred while generating the PDF');
+            window.showUIPopup('An error occurred while generating the PDF');
         } finally {
-            downloadBtn.disabled = false;
-            downloadBtn.innerHTML = originalButtonHtml;
+            if (loadingStarted) {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = originalButtonHtml;
+            }
         }
     });
 });
@@ -352,4 +442,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 </style>
 {% endblock %}
+
 

@@ -178,7 +178,7 @@
     }
     
     function showHelp() {
-        alert('AI-Assisted Prescription:\n\n• Green indicators show high confidence extractions\n• Yellow indicators show medium confidence - please review\n• Red indicators show low confidence - verify carefully\n• Click the info icon next to fields to see source context\n• All fields are editable regardless of confidence');
+        window.showUIPopup('AI-Assisted Prescription:\n\n• Green indicators show high confidence extractions\n• Yellow indicators show medium confidence - please review\n• Red indicators show low confidence - verify carefully\n• Click the info icon next to fields to see source context\n• All fields are editable regardless of confidence');
     }
     
     function closeContextModal(event) {
@@ -187,7 +187,7 @@
     }
     
     function saveDraft() {
-        alert('Draft saved! (Feature coming soon)');
+        window.showUIPopup('Draft saved! (Feature coming soon)');
     }
     
     async function finalizePrescription() {
@@ -254,3 +254,4 @@
     });
 </script>
 {% endblock %}
+

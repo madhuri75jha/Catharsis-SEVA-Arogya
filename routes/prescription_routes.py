@@ -4,6 +4,12 @@ from flask import Blueprint, request, jsonify, session
 from functools import wraps
 from datetime import datetime
 import json
+import time
+from typing import Any, Dict, List, Tuple
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +24,8 @@ bedrock_client = None
 database_manager = None
 lambda_pdf_service = None
 app_config_manager = None
+_translate_languages_cache: Dict[str, Any] = {"loaded_at": 0.0, "languages": []}
+_translate_languages_ttl_seconds = 900
 
 
 def init_prescription_routes(
@@ -72,6 +80,140 @@ def require_role(*allowed_roles):
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
+
+def _get_translate_client() -> Any:
+    region = 'us-east-1'
+    if app_config_manager:
+        region = app_config_manager.get('aws_region', region)
+    return boto3.client(
+        "translate",
+        region_name=region,
+        config=Config(connect_timeout=3, read_timeout=10, retries={"max_attempts": 2}),
+    )
+
+
+def _load_translate_languages(force_refresh: bool = False) -> List[Dict[str, str]]:
+    now = time.time()
+    if (
+        not force_refresh
+        and _translate_languages_cache["languages"]
+        and (now - _translate_languages_cache["loaded_at"]) < _translate_languages_ttl_seconds
+    ):
+        return _translate_languages_cache["languages"]
+
+    try:
+        client = _get_translate_client()
+        languages: List[Dict[str, str]] = []
+        next_token = None
+        while True:
+            kwargs: Dict[str, Any] = {
+                "DisplayLanguageCode": "en",
+                "MaxResults": 100,
+            }
+            if next_token:
+                kwargs["NextToken"] = next_token
+
+            response = client.list_languages(**kwargs)
+            for item in response.get("Languages", []):
+                code = str(item.get("LanguageCode") or "").strip()
+                name = str(item.get("LanguageName") or "").strip()
+                if code and name:
+                    languages.append({"code": code, "name": name})
+
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+
+        deduped = {(lang["code"], lang["name"]) for lang in languages}
+        sorted_languages = sorted(
+            ({"code": code, "name": name} for code, name in deduped),
+            key=lambda x: x["name"].lower(),
+        )
+        english = {"code": "en", "name": "English"}
+        ordered = [english] + [lang for lang in sorted_languages if lang["code"] != "en"]
+        _translate_languages_cache["languages"] = ordered
+        _translate_languages_cache["loaded_at"] = now
+        return ordered
+    except (ClientError, BotoCoreError) as exc:
+        logger.warning("Falling back to English-only language list: %s", str(exc))
+    except Exception as exc:  # pragma: no cover - defensive safety
+        logger.warning("Unexpected error loading languages from AWS Translate: %s", str(exc))
+    return [{"code": "en", "name": "English"}]
+
+
+def _field_supports_vernacular(field: Dict[str, Any]) -> bool:
+    return bool(field.get("vernacular_language") or field.get("response_language"))
+
+
+def _has_vernacular_fields(hospital_config: Dict[str, Any]) -> bool:
+    for section in hospital_config.get("sections", []) or []:
+        for field in section.get("fields", []) or []:
+            if isinstance(field, dict) and _field_supports_vernacular(field):
+                return True
+    return False
+
+
+def _load_hospital_config_for_prescription(hospital_id: str) -> Dict[str, Any]:
+    if not app_config_manager:
+        return {}
+    try:
+        cfg = app_config_manager.load_hospital_configuration(hospital_id)
+        return cfg.model_dump(mode='json')
+    except Exception:
+        try:
+            cfg = app_config_manager.get_default_hospital_configuration()
+            return cfg.model_dump(mode='json')
+        except Exception:
+            return {}
+
+
+def _resolve_pdf_language(request_payload: Dict[str, Any]) -> Tuple[str, str]:
+    requested_code = str(request_payload.get("language_code") or "en").strip().lower()
+    requested_name = str(request_payload.get("language_name") or "").strip()
+
+    available = _load_translate_languages()
+    by_code = {item["code"].lower(): item["name"] for item in available}
+
+    if requested_code in by_code:
+        return requested_code, by_code[requested_code]
+
+    return "en", requested_name or "English"
+
+
+def _authorize_hospital_context_for_write(user_id: str, requested_hospital_id: str | None) -> tuple[bool, str, str, int]:
+    """Authorize hospital context for prescription write operations."""
+    role_result = database_manager.execute_with_retry(
+        """
+        SELECT role, hospital_id, COALESCE(approval_status, 'Approved')
+        FROM user_roles
+        WHERE user_id = %s
+        LIMIT 1
+        """,
+        (user_id,)
+    )
+    if not role_result:
+        return False, '', 'User role configuration is missing.', 403
+
+    role, user_hospital_id, approval_status = role_result[0]
+    requested = (requested_hospital_id or '').strip()
+
+    if role == 'DeveloperAdmin':
+        return True, requested or user_hospital_id or 'default', '', 200
+    if role == 'HospitalAdmin':
+        if requested and user_hospital_id and requested != user_hospital_id:
+            return False, '', 'Hospital admin can only use their own hospital context.', 403
+        return True, user_hospital_id or requested or 'default', '', 200
+    if role == 'Doctor':
+        if approval_status != 'Approved':
+            return False, '', 'Your hospital administrator has not approved your account yet.', 403
+        if not user_hospital_id:
+            return False, '', 'No hospital is associated with your account.', 403
+        if requested and requested != user_hospital_id:
+            return False, '', 'You can only use your approved hospital context.', 403
+        return True, user_hospital_id, '', 200
+
+    return False, '', 'Invalid role configuration.', 403
 
 
 @prescription_bp.route('', methods=['GET'])
@@ -268,6 +410,37 @@ def get_prescription(prescription_id):
         return jsonify({'success': False, 'message': 'Failed to retrieve prescription'}), 500
 
 
+@prescription_bp.route('/<prescription_id>/pdf-options', methods=['GET'])
+@login_required
+def get_pdf_options(prescription_id):
+    """Get language options and prompt behavior for PDF generation."""
+    try:
+        user_id = session.get('user_id')
+        user_role = rbac_service.get_user_role(user_id)
+        prescription = prescription_service.get_prescription_with_permissions(
+            prescription_id, user_id, user_role
+        )
+        if not prescription:
+            return jsonify({'success': False, 'message': 'Prescription not found'}), 404
+
+        has_permission, error_msg = rbac_service.check_permission(user_id, prescription, 'view')
+        if not has_permission:
+            return jsonify({'success': False, 'message': error_msg}), 403
+
+        hospital_config = _load_hospital_config_for_prescription(prescription['hospital_id'])
+        requires_language_selection = _has_vernacular_fields(hospital_config)
+        return jsonify({
+            'success': True,
+            'requires_language_selection': requires_language_selection,
+            'default_language_code': 'en',
+            'default_language_name': 'English',
+            'languages': _load_translate_languages(),
+        })
+    except Exception as e:
+        logger.error(f"Failed to load PDF options for prescription {prescription_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve PDF options'}), 500
+
+
 @prescription_bp.route('', methods=['POST'])
 @login_required
 def create_prescription():
@@ -275,13 +448,18 @@ def create_prescription():
     try:
         data = request.get_json()
         consultation_id = data.get('consultation_id', '')
-        hospital_id = data.get('hospital_id', 'default')
+        requested_hospital_id = data.get('hospital_id', 'default')
         patient_name = data.get('patient_name', '')
         
         if not consultation_id or not patient_name:
             return jsonify({'success': False, 'message': 'consultation_id and patient_name required'}), 400
         
         user_id = session.get('user_id')
+        authorized, hospital_id, auth_message, auth_status = _authorize_hospital_context_for_write(
+            user_id, requested_hospital_id
+        )
+        if not authorized:
+            return jsonify({'success': False, 'message': auth_message}), auth_status
         
         # Create prescription
         prescription_id = prescription_service.create_prescription(
@@ -491,6 +669,9 @@ def finalize_prescription(prescription_id):
 def generate_pdf(prescription_id):
     """Generate PDF on-demand and return signed URL"""
     try:
+        request_payload = request.get_json(silent=True) or {}
+        selected_language_code, selected_language_name = _resolve_pdf_language(request_payload)
+
         user_id = session.get('user_id')
         user_role = rbac_service.get_user_role(user_id)
         
@@ -507,18 +688,6 @@ def generate_pdf(prescription_id):
         if not has_permission:
             return jsonify({'success': False, 'message': error_msg}), 403
 
-        # Fast path: reuse existing generated file when available.
-        existing_s3_key = prescription.get('s3_key')
-        if existing_s3_key:
-            existing_url = pdf_generator.get_signed_url(existing_s3_key, expiration=3600)
-            if existing_url:
-                return jsonify({
-                    'success': True,
-                    'download_url': existing_url,
-                    'expires_in': 3600,
-                    'cached': True
-                })
-        
         # Get hospital data
         hospital_query = "SELECT * FROM hospitals WHERE hospital_id = %s"
         hospital_result = database_manager.execute_with_retry(hospital_query, (prescription['hospital_id'],))
@@ -545,19 +714,32 @@ def generate_pdf(prescription_id):
             prescription['doctor_name'] = doctor_result[0][0]
             prescription['doctor_specialty'] = doctor_result[0][1]
             prescription['doctor_signature_url'] = doctor_result[0][2]
+        else:
+            # Fallback when doctor profile row is missing/out-of-sync with prescription creator ID.
+            raw_doctor_id = str(prescription.get('created_by_doctor_id') or '').strip()
+            fallback_name = raw_doctor_id
+            if '@' in fallback_name:
+                fallback_name = fallback_name.split('@', 1)[0]
+            fallback_name = fallback_name.replace('.', ' ').replace('_', ' ').replace('-', ' ').strip().title()
+            prescription['doctor_name'] = fallback_name or 'Doctor'
 
         # Get hospital config JSON used for structure/layout hints
-        hospital_config = {}
-        if app_config_manager:
-            try:
-                cfg = app_config_manager.load_hospital_configuration(prescription['hospital_id'])
-                hospital_config = cfg.model_dump(mode='json')
-            except Exception:
-                try:
-                    cfg = app_config_manager.get_default_hospital_configuration()
-                    hospital_config = cfg.model_dump(mode='json')
-                except Exception:
-                    hospital_config = {}
+        hospital_config = _load_hospital_config_for_prescription(prescription['hospital_id'])
+        has_vernacular_fields = _has_vernacular_fields(hospital_config)
+
+        # Fast path: reuse existing generated file when available only for plain English PDFs.
+        existing_s3_key = prescription.get('s3_key')
+        if existing_s3_key and not has_vernacular_fields and selected_language_code == 'en':
+            existing_url = pdf_generator.get_signed_url(existing_s3_key, expiration=3600)
+            if existing_url:
+                return jsonify({
+                    'success': True,
+                    'download_url': existing_url,
+                    'expires_in': 3600,
+                    'cached': True,
+                    'language_code': selected_language_code,
+                    'language_name': selected_language_name,
+                })
 
         s3_key = None
         # Lambda-first PDF generation path
@@ -571,6 +753,10 @@ def generate_pdf(prescription_id):
                     "hospital_id": prescription.get('hospital_id'),
                     "requested_by": user_id,
                 },
+                "translation": {
+                    "target_language_code": selected_language_code,
+                    "target_language_name": selected_language_name,
+                },
             }
             lambda_result = lambda_pdf_service.generate_pdf(lambda_payload)
 
@@ -583,7 +769,9 @@ def generate_pdf(prescription_id):
                     'success': True,
                     'download_url': lambda_result['download_url'],
                     'expires_in': int(lambda_result.get('expires_in', 3600)),
-                    'cached': bool(lambda_result.get('cached', False))
+                    'cached': bool(lambda_result.get('cached', False)),
+                    'language_code': selected_language_code,
+                    'language_name': selected_language_name,
                 })
 
             if lambda_result and lambda_result.get('s3_key'):
@@ -612,7 +800,9 @@ def generate_pdf(prescription_id):
             return jsonify({
                 'success': True,
                 'download_url': download_url,
-                'expires_in': 3600
+                'expires_in': 3600,
+                'language_code': selected_language_code,
+                'language_name': selected_language_name,
             })
         else:
             return jsonify({'success': False, 'message': 'Failed to generate download URL'}), 500

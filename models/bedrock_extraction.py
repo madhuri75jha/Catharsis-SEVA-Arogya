@@ -6,7 +6,7 @@ These models ensure type safety and validation for medical entity extraction,
 hospital configurations, and prescription data.
 """
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, AliasChoices
 from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
@@ -62,6 +62,11 @@ class FieldDefinition(BaseModel):
     placeholder: Optional[str] = None
     unit: Optional[str] = None
     rows: Optional[int] = None  # For multiline
+    vernacular_language: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("vernacular_language", "response_language"),
+        serialization_alias="vernacular_language",
+    )
 
 
 class SectionDefinition(BaseModel):

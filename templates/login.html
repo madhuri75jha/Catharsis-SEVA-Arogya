@@ -83,16 +83,26 @@
                     <input id="registerPassword" class="ios-input" placeholder="Create a strong password" type="password" required/>
                 </div>
                 <div>
-                    <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">Role</label>
-                    <select id="registerRole" class="ios-input" required>
-                        <option value="">Select role</option>
-                        <option value="Doctor">Doctor</option>
-                        <option value="HospitalAdmin">Hospital Admin</option>
+                    <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">Account Setup</label>
+                    <select id="registerAccountType" class="ios-input" required>
+                        <option value="">Select option</option>
+                        <option value="create_hospital">I am starting a new hospital</option>
+                        <option value="join_hospital">I am joining an existing hospital</option>
                     </select>
                 </div>
-                <div>
-                    <label id="registerHospitalLabel" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">Hospital ID</label>
-                    <input id="registerHospitalId" class="ios-input" placeholder="hosp_12345" type="text" required/>
+                <div id="registerHospitalNameContainer" class="hidden">
+                    <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">Hospital Name</label>
+                    <input id="registerHospitalName" class="ios-input" placeholder="Arogya Care Hospital" type="text"/>
+                </div>
+                <div id="registerHospitalIdContainer" class="hidden">
+                    <label id="registerHospitalLabel" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">Find Hospital</label>
+                    <input id="registerHospitalSearch" class="ios-input" placeholder="Search by hospital name" type="text"/>
+                    <div id="registerHospitalResults" class="hidden mt-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 max-h-40 overflow-y-auto"></div>
+                    <div id="registerHospitalChip" class="hidden mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700">
+                        <span id="registerHospitalSelected" class="text-xs text-emerald-700 dark:text-emerald-300 font-semibold"></span>
+                        <button id="clearHospitalSelectionBtn" type="button" class="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:opacity-75">Clear</button>
+                    </div>
+                    <input id="registerHospitalId" type="hidden"/>
                 </div>
                 <button type="submit" class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/25 mt-6 active:scale-[0.98] transition-all">
                     Create Account
@@ -242,6 +252,93 @@
         el.classList.toggle('hidden', !show);
     }
 
+    let hospitalSearchDebounce = null;
+
+    function clearHospitalSelection() {
+        const selectedEl = document.getElementById('registerHospitalSelected');
+        const chipEl = document.getElementById('registerHospitalChip');
+        const hospitalIdInput = document.getElementById('registerHospitalId');
+        const hospitalSearchInput = document.getElementById('registerHospitalSearch');
+        if (selectedEl) {
+            selectedEl.textContent = '';
+        }
+        chipEl?.classList.add('hidden');
+        if (hospitalIdInput) {
+            hospitalIdInput.value = '';
+        }
+        if (hospitalSearchInput) {
+            hospitalSearchInput.focus();
+        }
+    }
+
+    function setHospitalSelection(hospital) {
+        const selectedEl = document.getElementById('registerHospitalSelected');
+        const chipEl = document.getElementById('registerHospitalChip');
+        const searchInput = document.getElementById('registerHospitalSearch');
+        const hospitalIdInput = document.getElementById('registerHospitalId');
+        const resultsEl = document.getElementById('registerHospitalResults');
+        if (!selectedEl || !chipEl || !searchInput || !hospitalIdInput || !resultsEl) return;
+
+        hospitalIdInput.value = hospital.hospital_id;
+        searchInput.value = hospital.name;
+        selectedEl.textContent = `${hospital.name} (${hospital.hospital_id})`;
+        chipEl.classList.remove('hidden');
+        resultsEl.classList.add('hidden');
+        resultsEl.innerHTML = '';
+    }
+
+    function renderHospitalResults(hospitals) {
+        const resultsEl = document.getElementById('registerHospitalResults');
+        if (!resultsEl) return;
+
+        resultsEl.innerHTML = '';
+        if (!hospitals || hospitals.length === 0) {
+            resultsEl.classList.remove('hidden');
+            resultsEl.innerHTML = '<div class="px-3 py-2 text-xs text-slate-500">No hospitals found</div>';
+            return;
+        }
+
+        hospitals.forEach((hospital) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700';
+            button.innerHTML = `
+                <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${hospital.name}</p>
+                <p class="text-xs text-slate-500">${hospital.hospital_id}</p>
+            `;
+            button.addEventListener('click', () => {
+                setHospitalSelection(hospital);
+            });
+            resultsEl.appendChild(button);
+        });
+        resultsEl.classList.remove('hidden');
+    }
+
+    async function searchHospitalsForSignup(query) {
+        const resultsEl = document.getElementById('registerHospitalResults');
+        if (!resultsEl) return;
+        if (!query || query.trim().length < 2) {
+            resultsEl.classList.add('hidden');
+            resultsEl.innerHTML = '';
+            clearHospitalSelection();
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/public/hospitals/search?q=${encodeURIComponent(query.trim())}&limit=8`);
+            const data = await response.json();
+            if (data.success) {
+                renderHospitalResults(data.hospitals || []);
+            } else {
+                resultsEl.classList.remove('hidden');
+                resultsEl.innerHTML = '<div class="px-3 py-2 text-xs text-red-500">Failed to search hospitals</div>';
+            }
+        } catch (error) {
+            resultsEl.classList.remove('hidden');
+            resultsEl.innerHTML = '<div class="px-3 py-2 text-xs text-red-500">Failed to search hospitals</div>';
+        }
+    }
+
     document.getElementById('showRegister').addEventListener('click', function() {
         document.getElementById('registerForm').classList.remove('hidden');
         document.getElementById('verifyForm').classList.add('hidden');
@@ -303,7 +400,8 @@
         const name = document.getElementById('registerName').value;
         const email = document.getElementById('registerEmail').value;
         const password = document.getElementById('registerPassword').value;
-        const role = document.getElementById('registerRole').value;
+        const accountType = document.getElementById('registerAccountType').value;
+        const hospitalName = document.getElementById('registerHospitalName').value.trim();
         const hospitalIdInput = document.getElementById('registerHospitalId');
         const hospital_id = hospitalIdInput.value.trim();
         const errorEl = document.getElementById('registerError');
@@ -312,13 +410,18 @@
         setMessage(errorEl, '', false);
         setMessage(successEl, '', false);
 
-        if (!role) {
-            setMessage(errorEl, 'Role is required.', true);
+        if (!accountType) {
+            setMessage(errorEl, 'Please choose how you want to set up your account.', true);
             return;
         }
 
-        if ((role === 'Doctor' || role === 'HospitalAdmin') && !hospital_id) {
-            setMessage(errorEl, 'Hospital ID is required for this role.', true);
+        if (accountType === 'join_hospital' && !hospital_id) {
+            setMessage(errorEl, 'Please search and select a hospital.', true);
+            return;
+        }
+
+        if (accountType === 'create_hospital' && !hospitalName) {
+            setMessage(errorEl, 'Hospital name is required when starting a new hospital.', true);
             return;
         }
 
@@ -328,13 +431,27 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ name, email, password, role, hospital_id })
+                body: JSON.stringify({
+                    name,
+                    email,
+                    password,
+                    account_type: accountType,
+                    hospital_id,
+                    hospital_name: hospitalName
+                })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                setMessage(successEl, data.message || 'Registration successful.', true);
+                let successMessage = data.message || 'Registration successful.';
+                if (accountType === 'create_hospital' && data.hospital_id) {
+                    successMessage += ` Your Hospital ID is ${data.hospital_id}.`;
+                }
+                if (accountType === 'join_hospital' && data.approval_status === 'Pending') {
+                    successMessage += ' Your account will be usable after hospital admin approval.';
+                }
+                setMessage(successEl, successMessage, true);
                 if (data.user_confirmed) {
                     setPanel('loginPanel');
                 } else {
@@ -350,21 +467,57 @@
         }
     });
 
-    document.getElementById('registerRole').addEventListener('change', function(e) {
+    document.getElementById('registerAccountType').addEventListener('change', function(e) {
         const hospitalInput = document.getElementById('registerHospitalId');
+        const hospitalSearchInput = document.getElementById('registerHospitalSearch');
+        const hospitalResults = document.getElementById('registerHospitalResults');
         const hospitalLabel = document.getElementById('registerHospitalLabel');
-        const selectedRole = e.target.value;
-        const requiresHospital = selectedRole === 'Doctor' || selectedRole === 'HospitalAdmin';
+        const hospitalNameInput = document.getElementById('registerHospitalName');
+        const hospitalIdContainer = document.getElementById('registerHospitalIdContainer');
+        const hospitalNameContainer = document.getElementById('registerHospitalNameContainer');
+        const selectedType = e.target.value;
 
-        hospitalInput.required = requiresHospital;
-        if (!requiresHospital && !hospitalInput.value) {
-            hospitalInput.value = 'default';
+        const isCreate = selectedType === 'create_hospital';
+        const isJoin = selectedType === 'join_hospital';
+
+        hospitalIdContainer.classList.toggle('hidden', !isJoin);
+        hospitalNameContainer.classList.toggle('hidden', !isCreate);
+        hospitalInput.required = isJoin;
+        hospitalNameInput.required = isCreate;
+        clearHospitalSelection();
+        if (hospitalSearchInput) {
+            hospitalSearchInput.value = '';
         }
-        if (requiresHospital && hospitalInput.value === 'default') {
-            hospitalInput.value = '';
+        if (hospitalResults) {
+            hospitalResults.classList.add('hidden');
+            hospitalResults.innerHTML = '';
         }
 
-        hospitalLabel.textContent = requiresHospital ? 'Hospital ID' : 'Hospital ID (optional)';
+        if (isCreate) {
+            hospitalLabel.textContent = 'Hospital ID (auto-generated)';
+        } else if (isJoin) {
+            hospitalLabel.textContent = 'Find Hospital';
+        }
+    });
+
+    document.getElementById('registerHospitalSearch').addEventListener('input', function(e) {
+        clearHospitalSelection();
+        if (hospitalSearchDebounce) {
+            clearTimeout(hospitalSearchDebounce);
+        }
+        const query = e.target.value;
+        hospitalSearchDebounce = setTimeout(() => {
+            searchHospitalsForSignup(query);
+        }, 250);
+    });
+
+    document.getElementById('clearHospitalSelectionBtn').addEventListener('click', function() {
+        clearHospitalSelection();
+        const resultsEl = document.getElementById('registerHospitalResults');
+        if (resultsEl) {
+            resultsEl.classList.add('hidden');
+            resultsEl.innerHTML = '';
+        }
     });
 
     document.getElementById('verifyForm').addEventListener('submit', async function(e) {

@@ -136,7 +136,7 @@ class PrescriptionConfigSettingsManager {
             try {
                 parsed = JSON.parse(editor.value);
             } catch (e) {
-                alert('Invalid JSON. Please fix formatting before saving.');
+                window.showUIPopup('Invalid JSON. Please fix formatting before saving.');
                 return;
             }
 
@@ -154,17 +154,17 @@ class PrescriptionConfigSettingsManager {
             const data = await response.json();
 
             if (!response.ok || !data.success) {
-                alert(data.message || 'Failed to save config');
+                window.showUIPopup(data.message || 'Failed to save config');
                 return;
             }
 
             this.config = data.config || parsed;
             this.source = 'hospital';
             this.render();
-            alert('Prescription config saved');
+            window.showUIPopup('Prescription config saved');
         } catch (error) {
             console.error('Failed to save config:', error);
-            alert('Failed to save config');
+            window.showUIPopup('Failed to save config');
         } finally {
             const saveBtn = document.getElementById('save-config-btn');
             if (saveBtn) {
@@ -191,17 +191,17 @@ class PrescriptionConfigSettingsManager {
             const data = await response.json();
 
             if (!response.ok || !data.success) {
-                alert(data.message || 'Failed to generate config from default');
+                window.showUIPopup(data.message || 'Failed to generate config from default');
                 return;
             }
 
             this.config = data.config || {};
             this.source = 'hospital';
             this.render();
-            alert('Generated and saved from default template');
+            window.showUIPopup('Generated and saved from default template');
         } catch (error) {
             console.error('Failed to generate from default:', error);
-            alert('Failed to generate config');
+            window.showUIPopup('Failed to generate config');
         } finally {
             const button = document.getElementById('generate-default-btn');
             if (button) {
@@ -248,3 +248,4 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 });
+

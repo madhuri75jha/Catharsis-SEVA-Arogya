@@ -200,7 +200,64 @@ class ConsultationsListManager {
         }
         row.appendChild(prescriptionCell);
 
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'px-4 py-3';
+        const isDeleted = String(consultation.status || '').toUpperCase() === 'DELETED';
+        if (isDeleted) {
+            actionsCell.innerHTML = '<span class="text-xs text-slate-400">Deleted</span>';
+        } else {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'text-xs font-medium px-2.5 py-1.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.softDeleteConsultation(consultation.consultation_id, deleteBtn);
+            });
+            actionsCell.appendChild(deleteBtn);
+        }
+        row.appendChild(actionsCell);
+
         return row;
+    }
+
+    async softDeleteConsultation(consultationId, buttonEl) {
+        if (!consultationId) return;
+
+        const confirmed = window.confirm('Move this consultation to deleted status?');
+        if (!confirmed) return;
+
+        const originalLabel = buttonEl ? buttonEl.textContent : null;
+        if (buttonEl) {
+            buttonEl.disabled = true;
+            buttonEl.textContent = 'Deleting...';
+        }
+
+        try {
+            const response = await fetch(`/api/v1/consultations/${encodeURIComponent(consultationId)}/delete`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || `Delete failed with status ${response.status}`);
+            }
+            await this.fetchConsultations();
+            if (window.showUIPopup) {
+                window.showUIPopup('Consultation marked as deleted');
+            }
+        } catch (error) {
+            console.error('Error deleting consultation:', error);
+            if (window.showUIPopup) {
+                window.showUIPopup(error.message || 'Failed to delete consultation');
+            } else {
+                window.alert(error.message || 'Failed to delete consultation');
+            }
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalLabel || 'Delete';
+            }
+        }
     }
 
     navigateToConsultation(consultationId) {
@@ -260,7 +317,8 @@ class ConsultationsListManager {
         const statusMap = {
             COMPLETED: 'Completed',
             IN_PROGRESS: 'In Progress',
-            FAILED: 'Failed'
+            FAILED: 'Failed',
+            DELETED: 'Deleted'
         };
         const normalized = String(status || '').toUpperCase();
         return statusMap[normalized] || status || 'Unknown';
@@ -271,6 +329,7 @@ class ConsultationsListManager {
         if (normalized === 'completed') return 'status-completed';
         if (normalized === 'in_progress') return 'status-in_progress';
         if (normalized === 'failed') return 'status-failed';
+        if (normalized === 'deleted') return 'status-failed';
         return 'status-in_progress';
     }
 

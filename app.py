@@ -14,6 +14,7 @@ from functools import wraps
 import os
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -277,7 +278,7 @@ def init_app():
             lambda_pdf_svc=lambda_pdf_service,
             cfg_manager=config_manager
         )
-        init_hospital_routes(rbac_service, database_manager, cloudwatch_service)
+        init_hospital_routes(rbac_service, database_manager, cloudwatch_service, auth_svc=auth_manager)
         
         # Register blueprints
         app.register_blueprint(prescription_bp)
@@ -350,6 +351,61 @@ def _read_log_tail(log_path: str, lines: int) -> str:
         return "".join(deque(f, maxlen=lines))
 
 
+def _generate_hospital_id() -> str:
+    """Generate a unique hospital identifier."""
+    for _ in range(10):
+        candidate = f"hosp_{uuid.uuid4().hex[:8]}"
+        result = database_manager.execute_with_retry(
+            "SELECT 1 FROM hospitals WHERE hospital_id = %s",
+            (candidate,)
+        )
+        if not result:
+            return candidate
+    raise RuntimeError("Unable to generate unique hospital ID")
+
+
+def _authorize_hospital_context(user_id: str, requested_hospital_id: str | None) -> tuple[bool, str, str, int]:
+    """
+    Authorize and resolve hospital context for hospital-bound actions.
+
+    Returns:
+        (is_allowed, resolved_hospital_id, message, http_status)
+    """
+    role_result = database_manager.execute_with_retry(
+        """
+        SELECT role, hospital_id, COALESCE(approval_status, 'Approved')
+        FROM user_roles
+        WHERE user_id = %s
+        LIMIT 1
+        """,
+        (user_id,)
+    )
+    if not role_result:
+        return False, '', 'User role configuration is missing.', 403
+
+    role, user_hospital_id, approval_status = role_result[0]
+    requested = (requested_hospital_id or '').strip()
+
+    if role == 'DeveloperAdmin':
+        return True, requested or user_hospital_id or 'default', '', 200
+
+    if role == 'HospitalAdmin':
+        if requested and requested != user_hospital_id:
+            return False, '', 'Hospital admin can only use their own hospital context.', 403
+        return True, user_hospital_id or requested or 'default', '', 200
+
+    if role == 'Doctor':
+        if approval_status != 'Approved':
+            return False, '', 'Your hospital administrator has not approved your account yet.', 403
+        if not user_hospital_id:
+            return False, '', 'No hospital is associated with your account.', 403
+        if requested and requested != user_hospital_id:
+            return False, '', 'You can only use your approved hospital context.', 403
+        return True, user_hospital_id, '', 200
+
+    return False, '', 'Invalid role configuration.', 403
+
+
 def _rebuild_consultation_transcript(consultation_id: str, user_id: str) -> str:
     """
     Rebuild merged transcript text for a consultation from all clip rows.
@@ -407,6 +463,38 @@ def login():
         'login.html',
         google_client_id=os.getenv('GOOGLE_CLIENT_ID', '')
     )
+
+
+@app.route('/api/v1/public/hospitals/search', methods=['GET'])
+def api_public_hospital_search():
+    """Public hospital lookup for signup flow."""
+    try:
+        query = (request.args.get('q', '') or '').strip().lower()
+        limit = min(max(int(request.args.get('limit', 10) or 10), 1), 20)
+
+        if len(query) < 2:
+            return jsonify({'success': True, 'hospitals': []})
+
+        like_pattern = f"%{query}%"
+        starts_pattern = f"{query}%"
+        rows = database_manager.execute_with_retry(
+            """
+            SELECT hospital_id, name
+            FROM hospitals
+            WHERE LOWER(name) LIKE %s OR LOWER(hospital_id) LIKE %s
+            ORDER BY
+                CASE WHEN LOWER(name) LIKE %s THEN 0 ELSE 1 END,
+                name ASC
+            LIMIT %s
+            """,
+            (like_pattern, like_pattern, starts_pattern, limit)
+        ) or []
+
+        hospitals = [{'hospital_id': row[0], 'name': row[1]} for row in rows]
+        return jsonify({'success': True, 'hospitals': hospitals})
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Hospital search failed: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to search hospitals'}), 500
 
 
 @app.route('/debug/logs')
@@ -695,6 +783,9 @@ def consultation_detail(consultation_id):
             consultation_data = mock_consultations[mock_key]
             return render_template('consultation_detail.html', consultation=consultation_data)
         
+        requester_role = session.get('user_role')
+        requester_hospital = session.get('hospital_id')
+
         # Query consultation-level data first
         query_consultation = """
         SELECT
@@ -714,11 +805,25 @@ def consultation_detail(consultation_id):
             c.created_at,
             c.updated_at
         FROM consultations c
-        WHERE c.consultation_id = %s AND c.user_id = %s
+        WHERE c.consultation_id = %s
+          AND (
+            %s = 'DeveloperAdmin'
+            OR c.user_id = %s
+            OR (
+                %s = 'HospitalAdmin'
+                AND EXISTS (
+                    SELECT 1
+                    FROM user_roles ur
+                    WHERE ur.user_id = c.user_id
+                      AND ur.role = 'Doctor'
+                      AND ur.hospital_id = %s
+                )
+            )
+          )
         """
         consultation_result = database_manager.execute_with_retry(
             query_consultation,
-            (consultation_id, user_id)
+            (consultation_id, requester_role, user_id, requester_role, requester_hospital)
         )
 
         # Backward compatibility for legacy consultation links by transcription_id
@@ -733,15 +838,29 @@ def consultation_detail(consultation_id):
                 t.created_at,
                 t.updated_at
             FROM transcriptions t
-            WHERE t.transcription_id = %s AND t.user_id = %s
+            WHERE t.transcription_id = %s
+              AND (
+                %s = 'DeveloperAdmin'
+                OR t.user_id = %s
+                OR (
+                    %s = 'HospitalAdmin'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM user_roles ur
+                        WHERE ur.user_id = t.user_id
+                          AND ur.role = 'Doctor'
+                          AND ur.hospital_id = %s
+                    )
+                )
+              )
             """
             consultation_result = database_manager.execute_with_retry(
                 legacy_query,
-                (int(consultation_id), user_id)
+                (int(consultation_id), requester_role, user_id, requester_role, requester_hospital)
             )
 
         if not consultation_result or len(consultation_result) == 0:
-            logger.warning(f"Consultation {consultation_id} not found for user {user_id}")
+            logger.warning(f"Consultation {consultation_id} not accessible for user {user_id}")
             abort(404)
 
         consultation_row = consultation_result[0]
@@ -780,7 +899,7 @@ def consultation_detail(consultation_id):
 
         prescription_result = database_manager.execute_with_retry(
             query_prescription,
-            (user_id, str(consultation_id_value))
+            (trans_user_id, str(consultation_id_value))
         )
 
         # Legacy fallback for old records that may not have consultation_id populated.
@@ -804,7 +923,7 @@ def consultation_detail(consultation_id):
             """
             prescription_result = database_manager.execute_with_retry(
                 legacy_query_prescription,
-                (user_id, created_at, created_at)
+                (trans_user_id, created_at, created_at)
             )
         
         prescription = None
@@ -929,7 +1048,7 @@ def consultation_detail(consultation_id):
             WHERE consultation_id = %s AND user_id = %s
             ORDER BY clip_order ASC, created_at ASC
             """,
-            (str(consultation_id_value), user_id)
+            (str(consultation_id_value), trans_user_id)
         ) or []
         clips = []
         for clip_order, clip_job_id, clip_status, clip_audio_s3_key, clip_transcript_text, clip_created_at in clip_rows:
@@ -978,7 +1097,7 @@ def api_login():
     
     try:
         data = _get_request_data()
-        email = data.get('email', '')
+        email = (data.get('email', '') or '').strip().lower()
         password = data.get('password', '')
         
         if not email or not password:
@@ -1036,6 +1155,17 @@ def api_login():
                     session['user_role'] = user_role
                     hospital_id = attributes.get('custom:hospital_id')
                     session['hospital_id'] = hospital_id
+                    approval_result = database_manager.execute_with_retry(
+                        "SELECT approval_status FROM user_roles WHERE user_id = %s",
+                        (email,)
+                    )
+                    approval_status = approval_result[0][0] if approval_result else 'Approved'
+                    if user_role == 'Doctor' and approval_status != 'Approved':
+                        session.clear()
+                        return jsonify({
+                            'success': False,
+                            'message': 'Your hospital administrator has not approved your account yet.'
+                        }), 403
                 else:
                     session.clear()
                     logger.warning(f"Login blocked for {email}: missing or invalid Cognito role attributes")
@@ -1093,7 +1223,7 @@ def api_google_login():
 
         audience = payload.get('aud')
         issuer = payload.get('iss')
-        email = payload.get('email', '')
+        email = (payload.get('email', '') or '').strip().lower()
         email_verified = str(payload.get('email_verified', 'false')).lower() == 'true'
         expiry = payload.get('exp')
 
@@ -1114,7 +1244,7 @@ def api_google_login():
                 pass
 
         role_query = """
-        SELECT role, hospital_id
+        SELECT role, hospital_id, approval_status
         FROM user_roles
         WHERE user_id = %s
         """
@@ -1127,6 +1257,12 @@ def api_google_login():
 
         user_role = role_result[0][0]
         hospital_id = role_result[0][1]
+        approval_status = role_result[0][2]
+        if user_role == 'Doctor' and approval_status != 'Approved':
+            return jsonify({
+                'success': False,
+                'message': 'Your hospital administrator has not approved your account yet.'
+            }), 403
 
         session['user_id'] = email
         session['user_name'] = payload.get('name', email.split('@')[0].title())
@@ -1154,28 +1290,42 @@ def api_register():
     
     try:
         data = _get_request_data()
-        email = data.get('email', '')
+        email = (data.get('email', '') or '').strip().lower()
         password = data.get('password', '')
         name = data.get('name', '')
-        role = data.get('role', '')
-        hospital_id = data.get('hospital_id', '')
+        account_type = (data.get('account_type', '') or '').strip()
+        hospital_id = (data.get('hospital_id', '') or '').strip()
+        hospital_name = (data.get('hospital_name', '') or '').strip()
+        role = ''
 
-        if not email or not password or not role:
-            return jsonify({'success': False, 'message': 'Email, password, and role are required'}), 400
+        # Backward compatibility for older clients still sending role.
+        if not account_type:
+            legacy_role = (data.get('role', '') or '').strip()
+            if legacy_role == 'HospitalAdmin':
+                account_type = 'create_hospital'
+            elif legacy_role == 'Doctor':
+                account_type = 'join_hospital'
 
-        from utils.validation import validate_user_role
-        role_valid, role_error = validate_user_role(role)
-        if not role_valid:
-            return jsonify({'success': False, 'message': role_error}), 400
+        if not email or not password or not account_type:
+            return jsonify({'success': False, 'message': 'Email, password, and account type are required'}), 400
 
-        if role in ['Doctor', 'HospitalAdmin'] and not hospital_id:
-            return jsonify({
-                'success': False,
-                'message': 'hospital_id is required for Doctor and HospitalAdmin users'
-            }), 400
-
-        if role == 'DeveloperAdmin' and not hospital_id:
-            hospital_id = 'default'
+        if account_type == 'create_hospital':
+            role = 'HospitalAdmin'
+            if not hospital_name:
+                hospital_name = f"{name.strip()}'s Hospital" if name else 'New Hospital'
+            hospital_id = _generate_hospital_id()
+        elif account_type == 'join_hospital':
+            role = 'Doctor'
+            if not hospital_id:
+                return jsonify({'success': False, 'message': 'Hospital ID is required to join an existing hospital'}), 400
+            hospital_exists = database_manager.execute_with_retry(
+                "SELECT 1 FROM hospitals WHERE hospital_id = %s",
+                (hospital_id,)
+            )
+            if not hospital_exists:
+                return jsonify({'success': False, 'message': 'Hospital not found. Check the Hospital ID and try again.'}), 404
+        else:
+            return jsonify({'success': False, 'message': 'Invalid account type. Choose start or join hospital.'}), 400
 
         # Register with Cognito
         attributes = {}
@@ -1187,11 +1337,45 @@ def api_register():
         result = auth_manager.register(email, password, attributes)
         
         if result:
+            with database_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    if role == 'HospitalAdmin':
+                        cursor.execute(
+                            """
+                            INSERT INTO hospitals (hospital_id, name, email, created_at, updated_at)
+                            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            ON CONFLICT (hospital_id) DO NOTHING
+                            """,
+                            (hospital_id, hospital_name, email)
+                        )
+
+                    approval_status = 'Approved' if role == 'HospitalAdmin' else 'Pending'
+                    approved_by = email if role == 'HospitalAdmin' else None
+                    cursor.execute(
+                        """
+                        INSERT INTO user_roles (
+                            user_id, role, hospital_id, approval_status, approved_by, approved_at, created_at, updated_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, CASE WHEN %s = 'Approved' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET role = EXCLUDED.role,
+                            hospital_id = EXCLUDED.hospital_id,
+                            approval_status = EXCLUDED.approval_status,
+                            approved_by = EXCLUDED.approved_by,
+                            approved_at = EXCLUDED.approved_at,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (email, role, hospital_id, approval_status, approved_by, approval_status)
+                    )
+                    conn.commit()
+
             logger.info(f"User registered successfully: {email}")
             return jsonify({
                 'success': True,
                 'message': 'Registration successful. Please check your email for verification code.',
-                'user_confirmed': result['user_confirmed']
+                'user_confirmed': result['user_confirmed'],
+                'hospital_id': hospital_id,
+                'approval_status': 'Approved' if role == 'HospitalAdmin' else 'Pending'
             })
         else:
             return jsonify({'success': False, 'message': 'Registration failed. User may already exist or password does not meet requirements.'}), 400
@@ -1762,6 +1946,74 @@ def api_finalize_consultation(consultation_id):
         return jsonify({'success': False, 'message': 'Failed to finalize consultation'}), 500
 
 
+@app.route('/api/v1/consultations/<consultation_id>/delete', methods=['POST'])
+@login_required
+def api_soft_delete_consultation(consultation_id):
+    """Soft delete a consultation by marking its status as DELETED."""
+    logger = logging.getLogger(__name__)
+
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        requester_role = session.get('user_role')
+        requester_hospital = session.get('hospital_id')
+
+        updated = database_manager.execute_with_retry(
+            """
+            UPDATE consultations c
+            SET status = 'DELETED',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE c.consultation_id = %s
+              AND (
+                %s = 'DeveloperAdmin'
+                OR c.user_id = %s
+                OR (
+                    %s = 'HospitalAdmin'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM user_roles ur
+                        WHERE ur.user_id = c.user_id
+                          AND ur.role = 'Doctor'
+                          AND ur.hospital_id = %s
+                    )
+                )
+              )
+              AND UPPER(COALESCE(c.status, '')) <> 'DELETED'
+            RETURNING c.consultation_id
+            """,
+            (consultation_id, requester_role, user_id, requester_role, requester_hospital)
+        )
+
+        if not updated:
+            existing = database_manager.execute_with_retry(
+                """
+                SELECT consultation_id
+                FROM consultations
+                WHERE consultation_id = %s
+                LIMIT 1
+                """,
+                (consultation_id,)
+            )
+            if existing:
+                return jsonify({'success': False, 'message': 'Consultation already deleted'}), 409
+            return jsonify({'success': False, 'message': 'Consultation not found'}), 404
+
+        logger.info(
+            f"Consultation soft deleted: consultation_id={consultation_id}, requester={user_id}, role={requester_role}"
+        )
+        return jsonify({
+            'success': True,
+            'consultation_id': consultation_id,
+            'status': 'DELETED',
+            'message': 'Consultation moved to deleted status'
+        })
+    except Exception as e:
+        logger.error(f"Failed to soft delete consultation {consultation_id}: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to delete consultation'}), 500
+
+
 @app.route('/api/v1/consultations/<consultation_id>/save-and-finalize', methods=['POST'])
 @login_required
 def api_save_and_finalize_consultation(consultation_id):
@@ -1774,9 +2026,14 @@ def api_save_and_finalize_consultation(consultation_id):
             return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
         data = request.get_json(silent=True) or {}
-        hospital_id = data.get('hospital_id') or session.get('hospital_id') or 'default'
+        requested_hospital_id = data.get('hospital_id') or session.get('hospital_id') or 'default'
         patient_name = (data.get('patient_name') or '').strip()
         sections = data.get('sections')
+        authorized, hospital_id, auth_message, auth_status = _authorize_hospital_context(
+            user_id, requested_hospital_id
+        )
+        if not authorized:
+            return jsonify({'success': False, 'message': auth_message}), auth_status
 
         # Validate consultation ownership
         exists = database_manager.execute_with_retry(
@@ -1981,6 +2238,18 @@ def api_extract_prescription():
                 'error_message': 'Request body is required'
             }), 400
         
+        user_id = session.get('user_id')
+        authorized, resolved_hospital_id, auth_message, auth_status = _authorize_hospital_context(
+            user_id, data.get('hospital_id')
+        )
+        if not authorized:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'FORBIDDEN',
+                'error_message': auth_message
+            }), auth_status
+        data['hospital_id'] = resolved_hospital_id
+
         # Validate request using Pydantic model
         from models.bedrock_extraction import ExtractionRequest
         from pydantic import ValidationError
@@ -2074,7 +2343,7 @@ def api_get_consultations():
     """
     API endpoint for consultation retrieval
     
-    Retrieve recent consultations for authenticated user
+    Retrieve recent consultations based on requester role scope
     
     Query Parameters:
         limit (int, optional): Maximum consultations to return (default: 15, max: 50)
@@ -2110,7 +2379,7 @@ def api_get_consultations():
         # Optional server-side filters
         search = (request.args.get('search', '') or '').strip()
         status = (request.args.get('status', '') or '').strip().upper()
-        if status and status not in {'COMPLETED', 'IN_PROGRESS', 'FAILED'}:
+        if status and status not in {'COMPLETED', 'IN_PROGRESS', 'FAILED', 'DELETED'}:
             logger.warning(f"Ignoring invalid status filter: {status}")
             status = ''
         start_date = (request.args.get('start_date', '') or '').strip()
@@ -2221,11 +2490,16 @@ def api_get_consultations():
         # Import ConsultationService
         from services.consultation_service import ConsultationService
         
+        user_role = session.get('user_role')
+        user_hospital = session.get('hospital_id')
+
         # Call ConsultationService.get_recent_consultations()
         consultations = ConsultationService.get_recent_consultations(
             user_id=user_id,
             db_manager=database_manager,
             limit=limit,
+            user_role=user_role,
+            hospital_id=user_hospital,
             search=search or None,
             status=status or None,
             start_date=start_date or None,

@@ -172,6 +172,7 @@ resource "aws_iam_role_policy" "ecs_task_medical_ai" {
           "comprehendmedical:DetectEntitiesV2",
           "comprehendmedical:InferICD10CM",
           "translate:TranslateText",
+          "translate:ListLanguages",
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]

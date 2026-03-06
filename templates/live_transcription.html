@@ -299,7 +299,7 @@
         // Update quality on change
         qualitySelect.addEventListener('change', () => {
             if (controller.isRecording) {
-                alert('Please stop recording before changing quality settings');
+                window.showUIPopup('Please stop recording before changing quality settings');
                 return;
             }
             
@@ -334,3 +334,4 @@
     });
 </script>
 {% endblock %}
+
