@@ -2,6 +2,7 @@
 import logging
 import json
 import ast
+import re
 from io import BytesIO
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -19,6 +20,14 @@ except ImportError:
     logging.warning("ReportLab not installed. PDF generation will not be available.")
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_section_key(section_key: Any) -> str:
+    raw = str(section_key or '').strip().lower()
+    if not raw:
+        return ''
+    # Normalize only numeric suffixes for repeatable section instances.
+    return re.sub(r'_\d+$', '', raw)
 
 
 class PDFGenerator:
@@ -161,8 +170,11 @@ class PDFGenerator:
         # Dynamic sections
         sections = self._normalize_sections(prescription.get('sections', []))
 
-        # Sort sections by order
-        sorted_sections = sorted(sections, key=lambda s: s.get('order', 999))
+        # Sort sections by display_order/order metadata.
+        sorted_sections = sorted(
+            sections,
+            key=lambda s: int(s.get('display_order', s.get('order', 999)) or 999)
+        )
         
         for section in sorted_sections:
             # Only render sections with content
@@ -209,6 +221,12 @@ class PDFGenerator:
         normalized: List[Dict[str, Any]] = []
         for index, section in enumerate(sections):
             if isinstance(section, dict):
+                if 'order' not in section and 'display_order' in section:
+                    section['order'] = section.get('display_order')
+                if 'display_order' not in section and 'order' in section:
+                    section['display_order'] = section.get('order')
+                if section.get('key'):
+                    section['key'] = _normalize_section_key(section.get('key'))
                 normalized.append(section)
                 continue
 
@@ -307,7 +325,9 @@ class PDFGenerator:
         elements = []
         
         # Create metadata table
-        doctor_name = prescription.get('doctor_name') or 'Doctor'
+        doctor_name = str(prescription.get('doctor_name') or '').strip()
+        if not doctor_name or '@' in doctor_name:
+            doctor_name = 'Doctor'
         metadata_data = [
             ['Prescription ID:', str(prescription.get('prescription_id', 'N/A'))],
             ['Patient Name:', prescription.get('patient_name', 'N/A')],
@@ -466,7 +486,9 @@ class PDFGenerator:
         # Doctor information
         doctor_info_parts = []
         
-        doctor_name = prescription.get('doctor_name', 'Doctor')
+        doctor_name = str(prescription.get('doctor_name') or '').strip()
+        if not doctor_name or '@' in doctor_name:
+            doctor_name = 'Doctor'
         doctor_info_parts.append(f"<b>Dr. {doctor_name}</b>")
         
         if prescription.get('doctor_specialty'):

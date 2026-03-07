@@ -716,12 +716,12 @@ def generate_pdf(prescription_id):
             prescription['doctor_signature_url'] = doctor_result[0][2]
         else:
             # Fallback when doctor profile row is missing/out-of-sync with prescription creator ID.
-            raw_doctor_id = str(prescription.get('created_by_doctor_id') or '').strip()
-            fallback_name = raw_doctor_id
-            if '@' in fallback_name:
-                fallback_name = fallback_name.split('@', 1)[0]
-            fallback_name = fallback_name.replace('.', ' ').replace('_', ' ').replace('-', ' ').strip().title()
-            prescription['doctor_name'] = fallback_name or 'Doctor'
+            prescription['doctor_name'] = 'Doctor'
+            logger.warning(
+                "Doctor profile missing while generating PDF for prescription %s (doctor_id=%s)",
+                prescription_id,
+                prescription.get('created_by_doctor_id'),
+            )
 
         # Get hospital config JSON used for structure/layout hints
         hospital_config = _load_hospital_config_for_prescription(prescription['hospital_id'])

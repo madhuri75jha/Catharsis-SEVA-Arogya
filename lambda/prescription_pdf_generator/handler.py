@@ -3,6 +3,7 @@ import io
 import json
 import os
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from xml.sax.saxutils import escape
@@ -21,6 +22,21 @@ translate = boto3.client("translate")
 PDF_BUCKET = os.getenv("PDF_BUCKET", "")
 
 
+def _normalize_section_key(section_key: Any) -> str:
+    raw = str(section_key or "").strip().lower()
+    if not raw:
+        return ""
+    # Normalize only numeric suffixes used for repeatable section instances (e.g., medications_1).
+    return re.sub(r"_\d+$", "", raw)
+
+
+def _resolve_doctor_display_name(prescription: Dict[str, Any]) -> str:
+    doctor_name = str(prescription.get("doctor_name") or "").strip()
+    if doctor_name and "@" not in doctor_name:
+        return doctor_name
+    return "Doctor"
+
+
 def _http(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
@@ -34,8 +50,7 @@ def _section_order_from_config(hospital_config: Dict[str, Any]) -> List[str]:
     for section in hospital_config.get("sections", []):
         section_id = section.get("section_id")
         if section_id:
-            # Supports ids like medications_1 in config by normalizing suffix
-            order.append(str(section_id).split("_")[0])
+            order.append(_normalize_section_key(section_id))
     return order
 
 
@@ -68,7 +83,7 @@ def _normalize_sections(prescription: Dict[str, Any], hospital_config: Dict[str,
         if isinstance(section, dict):
             key = section.get("key")
             if key:
-                section_by_key[str(key)] = section
+                section_by_key[_normalize_section_key(key)] = section
 
     ordered = []
     seen = set()
@@ -97,7 +112,7 @@ def _section_config_map(hospital_config: Dict[str, Any]) -> Dict[str, Dict[str, 
         section_id = str(section.get("section_id") or "").strip()
         if not section_id:
             continue
-        base_id = section_id.split("_")[0]
+        base_id = _normalize_section_key(section_id)
         fields = section.get("fields", []) or []
         if isinstance(fields, list):
             fields = sorted(fields, key=lambda f: int(f.get("display_order", 999)))
@@ -241,7 +256,7 @@ def _build_pdf_bytes(
     meta = [
         ["Prescription ID", str(prescription.get("prescription_id", "N/A"))],
         ["Patient", str(prescription.get("patient_name", "N/A"))],
-        ["Doctor", str(prescription.get("doctor_name", "N/A"))],
+        ["Doctor", _resolve_doctor_display_name(prescription)],
         ["Date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")],
     ]
     meta_table = Table(meta, colWidths=[1.5 * inch, 4.8 * inch])
@@ -270,7 +285,7 @@ def _build_pdf_bytes(
             continue
         title = section.get("title") or section.get("key") or "Section"
         story.append(Paragraph(str(title), section_title))
-        section_key = str(section.get("key") or "").split("_")[0]
+        section_key = _normalize_section_key(section.get("key"))
         section_cfg = section_cfg_map.get(section_key)
 
         if section_cfg and section_cfg.get("fields"):
