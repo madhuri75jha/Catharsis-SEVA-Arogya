@@ -83,7 +83,7 @@ flowchart TB
   ecs --> vpce_transcribe
   ecs --> vpce_cm
 
-  ecs -->|services without VPCE\n(Bedrock/Translate/Lambda,\nor cross-region Comprehend)| nat
+  ecs -->|Services without VPCE: Bedrock, Translate, Lambda, cross-region Comprehend| nat
   nat --> igw
 ```
 
