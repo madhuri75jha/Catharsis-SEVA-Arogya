@@ -34,7 +34,11 @@
           "field_type": "dropdown",
           "required": true,
           "display_order": 3,
-          "options": ["Male", "Female", "Other"],
+          "options": [
+            "Male",
+            "Female",
+            "Other"
+          ],
           "description": "The patient's biological sex or gender. Look for pronouns (he/she/they), explicit mentions of 'male', 'female', or gender-specific medical terms. Map to one of: Male, Female, or Other."
         },
         {
@@ -90,9 +94,9 @@
           "field_type": "text",
           "required": false,
           "display_order": 3,
-          "placeholder": "e.g., 98.6°F",
-          "unit": "°F",
-          "description": "The patient's body temperature with unit. Look for phrases like 'temperature', 'temp', 'fever', or vital signs. Extract the numeric value and unit (°F, °C, Fahrenheit, Celsius). Format as 'X°F' or 'X°C'."
+          "placeholder": "e.g., 98.6Â°F",
+          "unit": "Â°F",
+          "description": "The patient's body temperature with unit. Look for phrases like 'temperature', 'temp', 'fever', or vital signs. Extract the numeric value and unit (Â°F, Â°C, Fahrenheit, Celsius). Format as 'XÂ°F' or 'XÂ°C'."
         },
         {
           "field_name": "oxygen_saturation",
@@ -120,7 +124,8 @@
           "display_order": 1,
           "rows": 4,
           "max_length": 1000,
-          "description": "The primary medical diagnosis or condition identified during the consultation. Look for phrases like 'diagnosis is', 'diagnosed with', 'condition', 'suffering from', or the doctor's assessment section. Extract the complete medical condition name and any relevant qualifiers (acute, chronic, mild, severe). Include ICD codes if mentioned."
+          "description": "The primary medical diagnosis or condition identified during the consultation. Look for phrases like 'diagnosis is', 'diagnosed with', 'condition', 'suffering from', or the doctor's assessment section. Extract the complete medical condition name and any relevant qualifiers (acute, chronic, mild, severe). Include ICD codes if mentioned.",
+          "vernacular_language": true
         }
       ]
     },
@@ -137,7 +142,8 @@
           "required": true,
           "display_order": 1,
           "max_length": 200,
-          "description": "The generic or brand name of the medication prescribed. Look for phrases like 'I'm prescribing', 'take', 'medication', 'give', 'start on', or prescription instructions. Extract the complete drug name (generic preferred, but include brand name if that's what's mentioned)."
+          "description": "The generic or brand name of the medication prescribed. Look for phrases like 'I'm prescribing', 'take', 'medication', 'give', 'start on', or prescription instructions. Extract the complete drug name (generic preferred, but include brand name if that's what's mentioned).",
+          "vernacular_language": true
         },
         {
           "field_name": "medicine_type",
@@ -147,7 +153,8 @@
           "display_order": 2,
           "placeholder": "e.g., Capsule, Tablet, Syrup",
           "max_length": 50,
-          "description": "The pharmaceutical form of the medication. Look for words like 'tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'inhaler' mentioned with the medication name. Extract the form type."
+          "description": "The pharmaceutical form of the medication. Look for words like 'tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'inhaler' mentioned with the medication name. Extract the form type.",
+          "vernacular_language": true
         },
         {
           "field_name": "dose",
@@ -157,7 +164,8 @@
           "display_order": 3,
           "placeholder": "e.g., 500mg, 10ml",
           "max_length": 50,
-          "description": "The dosage amount and unit for each administration. Look for numeric values followed by units like 'mg', 'ml', 'mcg', 'tablets', 'capsules', 'teaspoons' in medication instructions. Extract the numeric value and unit (e.g., 500mg, 2 tablets, 10ml). If a range is given, use the standard dose."
+          "description": "The dosage amount and unit for each administration. Look for numeric values followed by units like 'mg', 'ml', 'mcg', 'tablets', 'capsules', 'teaspoons' in medication instructions. Extract the numeric value and unit (e.g., 500mg, 2 tablets, 10ml). If a range is given, use the standard dose.",
+          "vernacular_language": true
         },
         {
           "field_name": "frequency",
@@ -165,8 +173,16 @@
           "field_type": "dropdown",
           "required": true,
           "display_order": 4,
-          "options": ["OD", "BDS", "TDS", "QID", "PRN", "STAT"],
-          "description": "How often the medication should be taken. Look for phrases describing frequency and map to standard abbreviations: 'once daily/once a day/one time' → OD, 'twice daily/twice a day/two times' → BDS, 'three times daily/thrice' → TDS, 'four times daily' → QID, 'as needed/when required/if needed' → PRN, 'immediately/right now/stat' → STAT."
+          "options": [
+            "OD",
+            "BDS",
+            "TDS",
+            "QID",
+            "PRN",
+            "STAT"
+          ],
+          "description": "How often the medication should be taken. Look for phrases describing frequency and map to standard abbreviations: 'once daily/once a day/one time' â†’ OD, 'twice daily/twice a day/two times' â†’ BDS, 'three times daily/thrice' â†’ TDS, 'four times daily' â†’ QID, 'as needed/when required/if needed' â†’ PRN, 'immediately/right now/stat' â†’ STAT.",
+          "vernacular_language": true
         },
         {
           "field_name": "duration",
@@ -176,7 +192,8 @@
           "display_order": 5,
           "placeholder": "e.g., 7 Days, 2 Weeks",
           "max_length": 50,
-          "description": "The total length of time the medication should be taken. Look for phrases like 'for X days', 'for X weeks', 'for X months', 'continue for', 'course of'. Extract the numeric value and time unit. Format as 'X Days', 'X Weeks', or 'X Months'. If ongoing, use 'Ongoing' or 'Until review'."
+          "description": "The total length of time the medication should be taken. Look for phrases like 'for X days', 'for X weeks', 'for X months', 'continue for', 'course of'. Extract the numeric value and time unit. Format as 'X Days', 'X Weeks', or 'X Months'. If ongoing, use 'Ongoing' or 'Until review'.",
+          "vernacular_language": true
         }
       ]
     },
