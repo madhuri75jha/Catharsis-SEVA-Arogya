@@ -20,6 +20,30 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 s3 = boto3.client("s3")
 translate = boto3.client("translate")
 PDF_BUCKET = os.getenv("PDF_BUCKET", "")
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+DEFAULT_FONT_FILE = "NotoSans-Regular.ttf"
+LANGUAGE_FONT_FILES = {
+    # Indic
+    "hi": "NotoSansDevanagari-Regular.ttf",
+    "mr": "NotoSansDevanagari-Regular.ttf",
+    "ne": "NotoSansDevanagari-Regular.ttf",
+    "bn": "NotoSansBengali-Regular.ttf",
+    "gu": "NotoSansGujarati-Regular.ttf",
+    "pa": "NotoSansGurmukhi-Regular.ttf",
+    "ta": "NotoSansTamil-Regular.ttf",
+    "te": "NotoSansTelugu-Regular.ttf",
+    "kn": "NotoSansKannada-Regular.ttf",
+    "ml": "NotoSansMalayalam-Regular.ttf",
+    "or": "NotoSansOriya-Regular.ttf",
+    "si": "NotoSansSinhala-Regular.ttf",
+    # Other scripts
+    "ar": "NotoSansArabic-Regular.ttf",
+    "he": "NotoSansHebrew-Regular.ttf",
+    "th": "NotoSansThai-Regular.ttf",
+    "lo": "NotoSansLao-Regular.ttf",
+    "my": "NotoSansMyanmar-Regular.ttf",
+    "km": "NotoSansKhmer-Regular.ttf",
+}
 
 
 def _normalize_section_key(section_key: Any) -> str:
@@ -174,11 +198,40 @@ def _translate_text(text: str, target_language_code: str, translation_cache: Dic
         return normalized
 
 
+def _register_multilingual_font(target_language_code: str) -> str:
+    """Register bundled font for selected language when present."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception:
+        return ""
+
+    font_file = LANGUAGE_FONT_FILES.get(target_language_code, DEFAULT_FONT_FILE)
+    font_path = os.path.join(FONTS_DIR, font_file)
+    font_name = os.path.splitext(font_file)[0]
+
+    try:
+        if pdfmetrics.getFont(font_name):
+            return font_name
+    except Exception:
+        pass
+
+    if not os.path.exists(font_path):
+        return ""
+
+    try:
+        pdfmetrics.registerFont(TTFont(font_name, font_path))
+        return font_name
+    except Exception:
+        return ""
+
+
 def _build_field_table_rows(
     section_content: Any,
     section_cfg: Dict[str, Any],
     target_language_code: str,
     translation_cache: Dict[str, str],
+    multilingual_font_name: str = "",
 ) -> List[List[Paragraph]]:
     fields = section_cfg.get("fields", []) or []
     if not fields:
@@ -201,7 +254,11 @@ def _build_field_table_rows(
                 continue
             english_label = str(field.get("display_label") or field_name.replace("_", " ").title()).strip()
             translated_label = _translate_text(english_label, target_language_code, translation_cache)
-            bilingual_label = f"{escape(english_label)} / {escape(translated_label)}"
+            if multilingual_font_name and translated_label:
+                translated_label_html = f"<font name='{multilingual_font_name}'>{escape(translated_label)}</font>"
+            else:
+                translated_label_html = escape(translated_label)
+            bilingual_label = f"{escape(english_label)} / {translated_label_html}"
 
             english_value = row_data.get(field_name, "")
             if not english_value and row_data.get("_raw_content") and len(fields) == 1:
@@ -210,7 +267,13 @@ def _build_field_table_rows(
 
             if _field_uses_vernacular(field):
                 translated_value = _translate_text(english_value_text, target_language_code, translation_cache)
-                value_html = f"{escape(english_value_text)}<br/><font size='8' color='#475569'>{escape(translated_value)}</font>"
+                if multilingual_font_name and translated_value:
+                    translated_value_html = (
+                        f"<font name='{multilingual_font_name}' size='8' color='#475569'>{escape(translated_value)}</font>"
+                    )
+                else:
+                    translated_value_html = f"<font size='8' color='#475569'>{escape(translated_value)}</font>"
+                value_html = f"{escape(english_value_text)}<br/>{translated_value_html}"
             else:
                 value_html = escape(english_value_text)
 
@@ -284,6 +347,7 @@ def _build_pdf_bytes(
     story.append(Spacer(1, 0.2 * inch))
 
     target_language_code = str(translation.get("target_language_code") or "en").strip().lower() or "en"
+    multilingual_font_name = _register_multilingual_font(target_language_code) if target_language_code != "en" else ""
     translation_cache: Dict[str, str] = {}
     section_cfg_map = _section_config_map(hospital_config)
 
@@ -297,7 +361,13 @@ def _build_pdf_bytes(
         section_cfg = section_cfg_map.get(section_key)
 
         if section_cfg and section_cfg.get("fields"):
-            field_rows = _build_field_table_rows(content, section_cfg, target_language_code, translation_cache)
+            field_rows = _build_field_table_rows(
+                content,
+                section_cfg,
+                target_language_code,
+                translation_cache,
+                multilingual_font_name=multilingual_font_name,
+            )
             if field_rows:
                 table = Table(field_rows, colWidths=[2.4 * inch, 3.9 * inch])
                 table.setStyle(

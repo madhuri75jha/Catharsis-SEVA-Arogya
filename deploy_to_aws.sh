@@ -113,7 +113,13 @@ if [ ! -f "$LAMBDA_SRC_DIR/handler.py" ]; then
   exit 1
 fi
 
+echo "==> Ensuring multilingual PDF fonts are available"
+"$PYTHON_BIN" "$ROOT_DIR/scripts/download_pdf_fonts.py"
+
 cp "$LAMBDA_SRC_DIR/handler.py" "$LAMBDA_BUILD_DIR/handler.py"
+if [ -d "$LAMBDA_SRC_DIR/fonts" ]; then
+  cp -R "$LAMBDA_SRC_DIR/fonts" "$LAMBDA_BUILD_DIR/fonts"
+fi
 
 if [ -f "$LAMBDA_SRC_DIR/requirements.txt" ]; then
   # Build Lambda dependencies in an Amazon Linux runtime container so compiled wheels

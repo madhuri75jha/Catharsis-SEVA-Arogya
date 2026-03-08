@@ -108,3 +108,9 @@ variable "enable_execute_command" {
   type        = bool
   default     = true
 }
+
+variable "health_check_grace_period_seconds" {
+  description = "Grace period before ALB health checks affect task health"
+  type        = number
+  default     = 180
+}

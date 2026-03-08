@@ -467,8 +467,9 @@ class PDFGenerator:
                         target_language_code,
                         translation_cache,
                     )
+                    translated_html = translated.replace('\n', '<br/>')
                     content_text = (
-                        f"{content_text}<br/><font size='8' color='#475569'>{translated.replace('\n', '<br/>')}</font>"
+                        f"{content_text}<br/><font size='8' color='#475569'>{translated_html}</font>"
                     )
                 elements.append(Paragraph(content_text, self.styles['Normal']))
         
