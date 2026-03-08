@@ -116,7 +116,14 @@ fi
 cp "$LAMBDA_SRC_DIR/handler.py" "$LAMBDA_BUILD_DIR/handler.py"
 
 if [ -f "$LAMBDA_SRC_DIR/requirements.txt" ]; then
-  "$PYTHON_BIN" -m pip install -r "$LAMBDA_SRC_DIR/requirements.txt" -t "$LAMBDA_BUILD_DIR" >/dev/null
+  # Build Lambda dependencies in an Amazon Linux runtime container so compiled wheels
+  # are compatible with Lambda (avoids platform-specific failures from local installs).
+  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" docker run --rm \
+    --entrypoint /bin/bash \
+    -v "$LAMBDA_SRC_DIR":/src \
+    -v "$LAMBDA_BUILD_DIR":/asset \
+    public.ecr.aws/lambda/python:3.12 \
+    -lc "python -m pip install -r /src/requirements.txt -t /asset --no-cache-dir >/dev/null"
 fi
 
 rm -f "$LAMBDA_ZIP_PATH"

@@ -46,8 +46,12 @@ def _http(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _section_order_from_config(hospital_config: Dict[str, Any]) -> List[str]:
+    config_sections = sorted(
+        hospital_config.get("sections", []) or [],
+        key=lambda s: int(s.get("display_order", 999) or 999),
+    )
     order: List[str] = []
-    for section in hospital_config.get("sections", []):
+    for section in config_sections:
         section_id = section.get("section_id")
         if section_id:
             order.append(_normalize_section_key(section_id))
@@ -95,7 +99,7 @@ def _normalize_sections(prescription: Dict[str, Any], hospital_config: Dict[str,
     for section in sections:
         if not isinstance(section, dict):
             continue
-        key = str(section.get("key", ""))
+        key = _normalize_section_key(section.get("key", ""))
         if key and key not in seen:
             ordered.append(section)
 
@@ -108,7 +112,11 @@ def _field_uses_vernacular(field: Dict[str, Any]) -> bool:
 
 def _section_config_map(hospital_config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     section_map: Dict[str, Dict[str, Any]] = {}
-    for section in hospital_config.get("sections", []) or []:
+    sorted_sections = sorted(
+        hospital_config.get("sections", []) or [],
+        key=lambda s: int(s.get("display_order", 999) or 999),
+    )
+    for section in sorted_sections:
         section_id = str(section.get("section_id") or "").strip()
         if not section_id:
             continue

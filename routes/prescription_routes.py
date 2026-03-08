@@ -784,7 +784,15 @@ def generate_pdf(prescription_id):
 
         # Fallback to in-app generator if Lambda unavailable/fails
         if not s3_key:
-            s3_key = pdf_generator.generate_prescription_pdf(prescription, hospital)
+            s3_key = pdf_generator.generate_prescription_pdf(
+                prescription,
+                hospital,
+                hospital_config=hospital_config,
+                translation={
+                    "target_language_code": selected_language_code,
+                    "target_language_name": selected_language_name,
+                },
+            )
         
         if not s3_key:
             return jsonify({'success': False, 'message': 'Failed to generate PDF'}), 500

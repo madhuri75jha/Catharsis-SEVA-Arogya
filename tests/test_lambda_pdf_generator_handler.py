@@ -211,3 +211,24 @@ def test_section_normalization_supports_dictionary_sections():
     normalized = handler._normalize_sections(prescription, hospital_config)
 
     assert [section["key"] for section in normalized] == ["vitals", "diagnosis"]
+
+
+def test_section_normalization_uses_display_order_from_config():
+    prescription = {
+        "sections": [
+            {"key": "diagnosis", "title": "Diagnosis", "content": {"diagnosis": "Viral fever"}},
+            {"key": "patient_details_1", "title": "Patient Details", "content": {"patient_name": "Siya"}},
+            {"key": "vitals", "title": "Vitals", "content": {"blood_pressure": "125/85"}},
+        ]
+    }
+    hospital_config = {
+        "sections": [
+            {"section_id": "vitals", "display_order": 2},
+            {"section_id": "diagnosis", "display_order": 3},
+            {"section_id": "patient_details", "display_order": 1},
+        ]
+    }
+
+    normalized = handler._normalize_sections(prescription, hospital_config)
+
+    assert [section["key"] for section in normalized] == ["patient_details_1", "vitals", "diagnosis"]

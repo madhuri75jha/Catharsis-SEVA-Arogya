@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """PDF Generator Service for creating prescription PDFs with dynamic section rendering"""
 import logging
 import json
@@ -6,6 +8,8 @@ import re
 from io import BytesIO
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import boto3
+from botocore.config import Config
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -109,8 +113,13 @@ class PDFGenerator:
             spaceAfter=6
         )
     
-    def generate_prescription_pdf(self, prescription: Dict[str, Any], 
-                                 hospital: Dict[str, Any]) -> Optional[str]:
+    def generate_prescription_pdf(
+        self,
+        prescription: Dict[str, Any],
+        hospital: Dict[str, Any],
+        hospital_config: Optional[Dict[str, Any]] = None,
+        translation: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
         """
         Generate prescription PDF and upload to S3
         
@@ -123,7 +132,12 @@ class PDFGenerator:
         """
         try:
             # Generate PDF bytes
-            pdf_bytes = self._generate_pdf_bytes(prescription, hospital)
+            pdf_bytes = self._generate_pdf_bytes(
+                prescription,
+                hospital,
+                hospital_config=hospital_config or {},
+                translation=translation or {},
+            )
             
             # Upload to S3
             prescription_id = prescription['prescription_id']
@@ -141,8 +155,13 @@ class PDFGenerator:
             logger.error(f"Failed to generate prescription PDF: {str(e)}")
             return None
     
-    def _generate_pdf_bytes(self, prescription: Dict[str, Any], 
-                           hospital: Dict[str, Any]) -> bytes:
+    def _generate_pdf_bytes(
+        self,
+        prescription: Dict[str, Any],
+        hospital: Dict[str, Any],
+        hospital_config: Dict[str, Any] | None = None,
+        translation: Dict[str, Any] | None = None,
+    ) -> bytes:
         """
         Generate PDF document as bytes
         
@@ -167,19 +186,29 @@ class PDFGenerator:
         story.extend(self._render_metadata(prescription))
         story.append(Spacer(1, 0.3*inch))
         
+        hospital_config = hospital_config or {}
+        translation = translation or {}
+        target_language_code = str(translation.get('target_language_code') or 'en').strip().lower() or 'en'
+
         # Dynamic sections
         sections = self._normalize_sections(prescription.get('sections', []))
-
-        # Sort sections by display_order/order metadata.
-        sorted_sections = sorted(
-            sections,
-            key=lambda s: int(s.get('display_order', s.get('order', 999)) or 999)
-        )
+        section_cfg_map = self._section_config_map(hospital_config)
+        sorted_sections = self._order_sections(sections, hospital_config)
+        translation_cache: Dict[str, str] = {}
         
         for section in sorted_sections:
             # Only render sections with content
             if section.get('content'):
-                story.extend(self._render_section(section))
+                section_key = str(section.get('key') or '').strip().lower()
+                section_cfg = section_cfg_map.get(_normalize_section_key(section_key), {})
+                story.extend(
+                    self._render_section(
+                        section,
+                        section_cfg=section_cfg,
+                        target_language_code=target_language_code,
+                        translation_cache=translation_cache,
+                    )
+                )
                 story.append(Spacer(1, 0.2*inch))
         
         # Footer with doctor signature
@@ -189,6 +218,46 @@ class PDFGenerator:
         doc.build(story)
         
         return buffer.getvalue()
+
+    def _section_config_map(self, hospital_config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        section_map: Dict[str, Dict[str, Any]] = {}
+        for section in hospital_config.get('sections', []) or []:
+            section_id = str(section.get('section_id') or '').strip()
+            if not section_id:
+                continue
+            section_map[_normalize_section_key(section_id)] = section
+        return section_map
+
+    def _order_sections(self, sections: List[Dict[str, Any]], hospital_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if not sections:
+            return []
+
+        config_sections = sorted(
+            hospital_config.get('sections', []) or [],
+            key=lambda s: int(s.get('display_order', 999) or 999),
+        )
+        config_order = [_normalize_section_key(s.get('section_id')) for s in config_sections if s.get('section_id')]
+        section_by_key: Dict[str, Dict[str, Any]] = {}
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            section_key = _normalize_section_key(section.get('key'))
+            if section_key and section_key not in section_by_key:
+                section_by_key[section_key] = section
+
+        ordered: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for section_key in config_order:
+            if section_key and section_key in section_by_key:
+                ordered.append(section_by_key[section_key])
+                seen.add(section_key)
+
+        remaining = sorted(
+            [s for s in sections if isinstance(s, dict) and _normalize_section_key(s.get('key')) not in seen],
+            key=lambda s: int(s.get('display_order', s.get('order', 999)) or 999),
+        )
+        ordered.extend(remaining)
+        return ordered
 
     def _normalize_sections(self, raw_sections: Any) -> List[Dict[str, Any]]:
         """Normalize sections into a list of dictionaries."""
@@ -349,7 +418,13 @@ class PDFGenerator:
         
         return elements
     
-    def _render_section(self, section: Dict[str, Any]) -> List:
+    def _render_section(
+        self,
+        section: Dict[str, Any],
+        section_cfg: Optional[Dict[str, Any]] = None,
+        target_language_code: str = 'en',
+        translation_cache: Optional[Dict[str, str]] = None,
+    ) -> List:
         """
         Render a prescription section
         
@@ -368,11 +443,17 @@ class PDFGenerator:
         # Section content
         content = self._parse_structured_content(section.get('content', ''))
         section_key = str(section.get('key', '')).strip().lower()
+        translation_cache = translation_cache or {}
+        has_vernacular_fields = self._section_uses_vernacular(section_cfg or {})
         
         # Check if content is medications list (array)
         if section_key == 'medications' and isinstance(content, list):
             # Render as table
-            table_element = self._format_medications_table(content)
+            table_element = self._format_medications_table(
+                content,
+                target_language_code=target_language_code if has_vernacular_fields else 'en',
+                translation_cache=translation_cache,
+            )
             if table_element:
                 elements.append(table_element)
             elif content:
@@ -380,11 +461,25 @@ class PDFGenerator:
         else:
             content_text = self._format_content_for_paragraph(content, section_key)
             if content_text:
+                if has_vernacular_fields and target_language_code != 'en':
+                    translated = self._translate_text(
+                        re.sub(r'<br\s*/?>', '\n', content_text),
+                        target_language_code,
+                        translation_cache,
+                    )
+                    content_text = (
+                        f"{content_text}<br/><font size='8' color='#475569'>{translated.replace('\n', '<br/>')}</font>"
+                    )
                 elements.append(Paragraph(content_text, self.styles['Normal']))
         
         return elements
     
-    def _format_medications_table(self, medications: List[Dict[str, Any]]) -> Optional[Table]:
+    def _format_medications_table(
+        self,
+        medications: List[Dict[str, Any]],
+        target_language_code: str = 'en',
+        translation_cache: Optional[Dict[str, str]] = None,
+    ) -> Optional[Table]:
         """
         Format medications as a table
         
@@ -427,12 +522,19 @@ class PDFGenerator:
                             name = value
                             break
 
-                table_data.append([
-                    str(name),
-                    str(dosage),
-                    str(frequency),
-                    str(duration)
-                ])
+                name_text = str(name)
+                dosage_text = str(dosage)
+                frequency_text = str(frequency)
+                duration_text = str(duration)
+
+                if target_language_code != 'en':
+                    cache = translation_cache or {}
+                    name_text = f"{name_text}\n{self._translate_text(name_text, target_language_code, cache)}"
+                    dosage_text = f"{dosage_text}\n{self._translate_text(dosage_text, target_language_code, cache)}"
+                    frequency_text = f"{frequency_text}\n{self._translate_text(frequency_text, target_language_code, cache)}"
+                    duration_text = f"{duration_text}\n{self._translate_text(duration_text, target_language_code, cache)}"
+
+                table_data.append([name_text, dosage_text, frequency_text, duration_text])
             elif med:
                 table_data.append([str(med), '', '', ''])
 
@@ -457,6 +559,45 @@ class PDFGenerator:
         ]))
         
         return table
+
+    def _section_uses_vernacular(self, section_cfg: Dict[str, Any]) -> bool:
+        for field in section_cfg.get('fields', []) or []:
+            if isinstance(field, dict) and (field.get('vernacular_language') or field.get('response_language')):
+                return True
+        return False
+
+    def _get_translate_client(self):
+        if not hasattr(self, '_translate_client'):
+            self._translate_client = boto3.client(
+                'translate',
+                config=Config(connect_timeout=3, read_timeout=10, retries={'max_attempts': 2}),
+            )
+        return self._translate_client
+
+    def _translate_text(self, text: str, target_language_code: str, translation_cache: Dict[str, str]) -> str:
+        normalized = str(text or '').strip()
+        if not normalized:
+            return ''
+        if target_language_code.lower() == 'en':
+            return normalized
+
+        cache_key = f"{target_language_code}:{normalized}"
+        if cache_key in translation_cache:
+            return translation_cache[cache_key]
+
+        try:
+            response = self._get_translate_client().translate_text(
+                Text=normalized[:4500],
+                SourceLanguageCode='en',
+                TargetLanguageCode=target_language_code,
+            )
+            translated = str(response.get('TranslatedText') or '').strip() or normalized
+            translation_cache[cache_key] = translated
+            return translated
+        except Exception as e:
+            logger.warning("Translation failed for '%s': %s", normalized[:60], str(e))
+            translation_cache[cache_key] = normalized
+            return normalized
     
     def _render_footer(self, prescription: Dict[str, Any]) -> List:
         """
