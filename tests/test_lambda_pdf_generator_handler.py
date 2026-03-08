@@ -21,6 +21,8 @@ def _install_reportlab_stub():
         "Normal": types.SimpleNamespace(leading=12),
         "Title": object(),
     }
+    reportlab.lib.enums = types.ModuleType("reportlab.lib.enums")
+    reportlab.lib.enums.TA_CENTER = 1
     reportlab.lib.units = types.ModuleType("reportlab.lib.units")
     reportlab.lib.units.inch = 72
     reportlab.platypus = types.ModuleType("reportlab.platypus")
@@ -43,6 +45,7 @@ def _install_reportlab_stub():
     sys.modules["reportlab.lib.colors"] = reportlab.lib.colors
     sys.modules["reportlab.lib.pagesizes"] = reportlab.lib.pagesizes
     sys.modules["reportlab.lib.styles"] = reportlab.lib.styles
+    sys.modules["reportlab.lib.enums"] = reportlab.lib.enums
     sys.modules["reportlab.lib.units"] = reportlab.lib.units
     sys.modules["reportlab.platypus"] = reportlab.platypus
 
@@ -282,3 +285,36 @@ def test_build_field_table_rows_avoids_duplicate_bilingual_text_when_translation
     value_markup = rows[1][0][1][0]
     assert " / " not in header_markup
     assert "<br/>" not in value_markup
+
+
+def test_build_field_table_rows_avoids_trailing_slash_when_translation_empty(monkeypatch):
+    section_cfg = {
+        "repeatable": False,
+        "fields": [
+            {"field_name": "dose", "display_label": "Dose", "vernacular_language": True},
+        ],
+    }
+    content = {"dose": "500mg"}
+
+    monkeypatch.setattr(handler, "_translate_text", lambda _text, _lang, _cache: "")
+    rows = handler._build_field_table_rows(content, section_cfg, "nl", {}, multilingual_font_name="")
+    header_markup = rows[0][0][1][0]
+    value_markup = rows[1][0][1][0]
+
+    assert "Dose /" not in header_markup
+    assert " / " not in header_markup
+    assert "<br/>" not in value_markup
+
+
+def test_resolve_doctor_display_name_strips_prefix_and_uses_safe_fallback():
+    assert handler._resolve_doctor_display_name({"doctor_name": "Dr. Radheshyam"}) == "Radheshyam"
+    assert handler._resolve_doctor_display_name({"doctor_name": "doctor Meera"}) == "Meera"
+    assert handler._resolve_doctor_display_name({"created_by_doctor_id": "madhurijha.bpsmv@gmail.com"}) == "Doctor"
+
+
+def test_format_issue_datetime_is_human_readable_and_not_utc_suffix():
+    prescription = {"created_at": "2026-03-08T06:17:00+00:00"}
+    hospital = {"timezone": "Asia/Kolkata"}
+    rendered = handler._format_issue_datetime(prescription, hospital)
+    assert "," in rendered
+    assert "UTC" not in rendered

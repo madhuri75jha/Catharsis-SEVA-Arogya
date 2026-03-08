@@ -16,6 +16,44 @@
 
 ---
 
+## 🎯 Feature Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Core Features"
+        A[Voice Capture]
+        B[AI Transcription]
+        C[Medical Extraction]
+        D[Prescription Workflow]
+        E[PDF Generation]
+    end
+    
+    subgraph "Supporting Features"
+        F[Hospital Management]
+        G[RBAC]
+        H[Audit Logging]
+        I[Multi-language]
+    end
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    
+    F -.-> D
+    G -.-> D
+    H -.-> D
+    I -.-> E
+    
+    style A fill:#e3f2fd
+    style B fill:#f3e5f5
+    style C fill:#fff3e0
+    style D fill:#e8f5e9
+    style E fill:#fce4ec
+```
+
+---
+
 ## 1. Bedrock Medical Extraction
 
 ### Overview
@@ -34,18 +72,54 @@ AI-powered prescription generation using Amazon Bedrock (Claude 3) with function
 
 ### How It Works
 
-```
-Transcript Text
-    ↓
-[Comprehend Medical] → Extract entities (medications, symptoms, diagnoses)
-    ↓
-[Hospital Config] → Load field definitions and validation rules
-    ↓
-[Bedrock Claude 3] → Function calling to map entities to fields
-    ↓
-[Validation Layer] → Normalize dosages, validate fields
-    ↓
-Structured Prescription with Confidence Scores
+```mermaid
+flowchart TB
+    A[Transcript Text] --> B[Comprehend Medical]
+    B --> C[Extract Entities]
+    C --> D{Entity Types}
+    
+    D -->|Medications| E[Medication List]
+    D -->|Symptoms| F[Symptom List]
+    D -->|Diagnoses| G[Diagnosis List]
+    D -->|Vitals| H[Vital Signs]
+    
+    E --> I[Hospital Config]
+    F --> I
+    G --> I
+    H --> I
+    
+    I --> J[Load Field Definitions]
+    J --> K[Bedrock Claude 3]
+    
+    K --> L[Function Calling]
+    L --> M[Map Entities to Fields]
+    M --> N[Validation Layer]
+    
+    N --> O{Validate}
+    O -->|Dosage| P[Normalize Dosage]
+    O -->|Age| Q[Validate Range]
+    O -->|Required| R[Check Presence]
+    
+    P --> S[Confidence Scoring]
+    Q --> S
+    R --> S
+    
+    S --> T{Confidence Level}
+    T -->|>80%| U[🟢 High Confidence]
+    T -->|50-80%| V[🟡 Medium Confidence]
+    T -->|<50%| W[🔴 Low Confidence]
+    
+    U --> X[Structured Prescription]
+    V --> X
+    W --> X
+    
+    style A fill:#e3f2fd
+    style K fill:#f3e5f5
+    style N fill:#fff3e0
+    style X fill:#c8e6c9
+    style U fill:#c8e6c9
+    style V fill:#fff9c4
+    style W fill:#ffcdd2
 ```
 
 ### API Endpoints
@@ -269,11 +343,80 @@ Complete prescription lifecycle management with state machine, section approval,
 
 ### State Machine
 
+```mermaid
+stateDiagram-v2
+    [*] --> Draft: Create Prescription
+    
+    Draft --> InProgress: Load AI Content
+    Draft --> Deleted: Soft Delete
+    
+    InProgress --> Finalized: All Sections Approved
+    InProgress --> Deleted: Soft Delete
+    InProgress --> InProgress: Approve/Reject Sections
+    
+    Finalized --> Deleted: Soft Delete
+    Finalized --> Finalized: Generate PDF
+    
+    Deleted --> Draft: Restore (if Draft)
+    Deleted --> InProgress: Restore (if InProgress)
+    Deleted --> Finalized: Restore (if Finalized)
+    Deleted --> [*]: Auto-cleanup (30 days)
+    
+    note right of Draft
+        - Basic patient info
+        - No AI content
+        - Fully editable
+    end note
+    
+    note right of InProgress
+        - AI extraction complete
+        - Section approval required
+        - Partially editable
+    end note
+    
+    note right of Finalized
+        - All sections approved
+        - Immutable (read-only)
+        - PDF generation enabled
+    end note
+    
+    note right of Deleted
+        - Soft deleted
+        - 30-day retention
+        - Restorable
+    end note
 ```
-Draft → InProgress → Finalized
-  ↓         ↓           ↓
-Deleted ← Deleted ← Deleted
-         (30-day retention)
+
+### Section Approval Flow
+
+```mermaid
+flowchart TB
+    A[Prescription in Draft] --> B[Load AI Content]
+    B --> C[Transition to InProgress]
+    C --> D[Sections Populated]
+    
+    D --> E{Review Section}
+    E -->|Approve| F[Section Approved]
+    E -->|Reject| G[Enable Editing]
+    
+    G --> H[Edit Content]
+    H --> I[Save Changes]
+    I --> J[Status: Pending]
+    J --> E
+    
+    F --> K{All Required<br/>Sections Approved?}
+    K -->|No| E
+    K -->|Yes| L[Enable Finalize Button]
+    L --> M[User Clicks Finalize]
+    M --> N[Transition to Finalized]
+    N --> O[Generate PDF]
+    
+    style A fill:#e3f2fd
+    style C fill:#fff3e0
+    style F fill:#c8e6c9
+    style G fill:#ffcdd2
+    style N fill:#c8e6c9
+    style O fill:#f3e5f5
 ```
 
 **State Descriptions:**

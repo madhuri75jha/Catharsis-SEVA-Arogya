@@ -3,7 +3,7 @@
 {% block title %}SEVA Arogya - Voice Capture{% endblock %}
 
 {% block content %}
-<div class="relative flex h-screen max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
+<div class="relative flex   max-w-md mx-auto flex-col bg-white dark:bg-background-dark overflow-hidden shadow-2xl">
     <!-- Header / Status Bar -->
     <div class="flex items-center bg-white dark:bg-background-dark p-4 pb-2 justify-between">
         <div class="flex items-center gap-2">
@@ -110,6 +110,7 @@
     let currentConsultationId = null;
     let nextClipOrder = 1;
     let currentTranscript = '';
+    let currentHospitalId = '';
 
     function startTimer() {
         clearInterval(timerInterval);
@@ -370,6 +371,23 @@
         setStatus('Transcript saved');
     }
 
+    async function resolveHospitalId() {
+        if (currentHospitalId) {
+            return currentHospitalId;
+        }
+
+        const response = await fetch('/api/v1/profile');
+        const data = await response.json();
+        const hospitalId = data?.profile?.hospital_id;
+
+        if (!response.ok || !data?.success || !hospitalId) {
+            throw new Error('No approved hospital context found for this account');
+        }
+
+        currentHospitalId = hospitalId;
+        return currentHospitalId;
+    }
+
     async function stopAndExtract() {
         try {
             if (recording) {
@@ -381,7 +399,8 @@
                 return;
             }
 
-            await submitTranscriptForExtraction(currentTranscript, 'default', {
+            const hospitalId = await resolveHospitalId();
+            await submitTranscriptForExtraction(currentTranscript, hospitalId, {
                 consultationId: currentConsultationId
             });
         } catch (error) {
@@ -442,6 +461,7 @@
 
         (async () => {
             try {
+                await resolveHospitalId();
                 await startConsultation();
                 setStatus('Hold the button below and speak.');
             } catch (error) {

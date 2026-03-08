@@ -5,6 +5,7 @@ import os
 import hashlib
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
@@ -15,6 +16,7 @@ import boto3
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -58,8 +60,10 @@ def _normalize_section_key(section_key: Any) -> str:
 
 def _resolve_doctor_display_name(prescription: Dict[str, Any]) -> str:
     doctor_name = str(prescription.get("doctor_name") or "").strip()
-    if doctor_name and "@" not in doctor_name:
-        return doctor_name
+    if doctor_name:
+        cleaned = re.sub(r"^\s*(dr\.?|doctor)\s+", "", doctor_name, flags=re.IGNORECASE).strip()
+        if cleaned and cleaned.lower() != "doctor":
+            return cleaned
     return "Doctor"
 
 
@@ -69,6 +73,32 @@ def _http(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _format_issue_datetime(prescription: Dict[str, Any], hospital: Dict[str, Any]) -> str:
+    tz_name = str(hospital.get("timezone") or os.getenv("PDF_TIMEZONE") or "Asia/Kolkata").strip()
+    try:
+        target_tz = ZoneInfo(tz_name)
+    except Exception:
+        target_tz = timezone.utc
+
+    source = prescription.get("finalized_at") or prescription.get("created_at")
+    dt: datetime
+    if isinstance(source, str) and source.strip():
+        try:
+            dt = datetime.fromisoformat(source.replace("Z", "+00:00"))
+        except Exception:
+            dt = datetime.now(timezone.utc)
+    elif isinstance(source, datetime):
+        dt = source
+    else:
+        dt = datetime.now(timezone.utc)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    local_dt = dt.astimezone(target_tz)
+    return local_dt.strftime("%B %d, %Y %I:%M %p")
 
 
 def _extract_s3_bucket_key_from_url(url: str) -> tuple[str, str]:
@@ -92,20 +122,35 @@ def _extract_s3_bucket_key_from_url(url: str) -> tuple[str, str]:
 
 
 def _download_url_bytes(url: str, timeout_seconds: int = 6) -> bytes:
-    req = Request(url, headers={"User-Agent": "seva-arogya-pdf/1.0"})
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "seva-arogya-pdf/1.0",
+            "Accept": "image/*,*/*;q=0.8",
+        },
+    )
     with urlopen(req, timeout=timeout_seconds) as resp:  # nosec B310 - controlled logo URL fetch
         return resp.read()
 
 
-def _load_logo_bytes(hospital: Dict[str, Any]) -> bytes:
-    logo_url = str(hospital.get("logo_url") or "").strip()
-    if not logo_url:
+def _load_asset_bytes(asset_url: str) -> bytes:
+    url = str(asset_url or "").strip()
+    if not url:
         return b""
 
+    # Support GitHub blob URLs by converting them to raw URL format.
+    if "github.com" in url and "/blob/" in url:
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        parts = path.split("/", 3)
+        if len(parts) == 4:
+            owner, repo, _blob, rest = parts
+            url = f"https://raw.githubusercontent.com/{owner}/{repo}/{rest}"
+
     # Prefer direct URL fetch first (supports public and pre-signed URLs).
-    if logo_url.startswith("http://") or logo_url.startswith("https://"):
+    if url.startswith("http://") or url.startswith("https://"):
         try:
-            payload = _download_url_bytes(logo_url)
+            payload = _download_url_bytes(url)
             if payload:
                 return payload
         except Exception:
@@ -113,16 +158,16 @@ def _load_logo_bytes(hospital: Dict[str, Any]) -> bytes:
 
         # Fallback: parse S3-style URL and fetch via IAM credentials.
         try:
-            bucket, key = _extract_s3_bucket_key_from_url(logo_url)
+            bucket, key = _extract_s3_bucket_key_from_url(url)
             if bucket and key:
                 obj = s3.get_object(Bucket=bucket, Key=key)
                 return obj["Body"].read()
         except Exception:
             return b""
 
-    if logo_url.startswith("s3://"):
+    if url.startswith("s3://"):
         try:
-            bucket, key = _extract_s3_bucket_key_from_url(logo_url)
+            bucket, key = _extract_s3_bucket_key_from_url(url)
             if bucket and key:
                 obj = s3.get_object(Bucket=bucket, Key=key)
                 return obj["Body"].read()
@@ -130,6 +175,13 @@ def _load_logo_bytes(hospital: Dict[str, Any]) -> bytes:
             return b""
 
     return b""
+
+
+def _load_logo_bytes(hospital: Dict[str, Any]) -> bytes:
+    logo_url = str(hospital.get("logo_url") or "").strip()
+    if not logo_url:
+        return b""
+    return _load_asset_bytes(logo_url)
 
 
 def _build_logo_flowable(hospital: Dict[str, Any]):
@@ -143,6 +195,26 @@ def _build_logo_flowable(hospital: Dict[str, Any]):
         logo._restrictSize(1.1 * inch, 1.1 * inch)
         logo.hAlign = "CENTER"
         return logo
+    except Exception:
+        return None
+
+
+def _build_signature_flowable(prescription: Dict[str, Any]):
+    signature_url = str(
+        prescription.get("doctor_signature_url") or prescription.get("signature_url") or ""
+    ).strip()
+    if not signature_url:
+        return None
+    signature_bytes = _load_asset_bytes(signature_url)
+    if not signature_bytes:
+        return None
+    try:
+        from reportlab.platypus import Image
+
+        signature = Image(io.BytesIO(signature_bytes))
+        signature._restrictSize(1.8 * inch, 0.8 * inch)
+        signature.hAlign = "LEFT"
+        return signature
     except Exception:
         return None
 
@@ -338,7 +410,11 @@ def _build_field_table_rows(
         field_name = str(field.get("field_name") or "").strip()
         english_label = str(field.get("display_label") or field_name.replace("_", " ").title()).strip()
         translated_label = _translate_text(english_label, target_language_code, translation_cache)
-        if target_language_code == "en" or _same_text(english_label, translated_label):
+        if (
+            target_language_code == "en"
+            or not translated_label.strip()
+            or _same_text(english_label, translated_label)
+        ):
             bilingual_label = escape(english_label)
         else:
             if multilingual_font_name and translated_label:
@@ -346,7 +422,12 @@ def _build_field_table_rows(
             else:
                 translated_label_html = escape(translated_label)
             bilingual_label = f"{escape(english_label)} / {translated_label_html}"
-        header_row.append(Paragraph(f"<b>{bilingual_label}</b>", getSampleStyleSheet()["Normal"]))
+        header_row.append(
+            Paragraph(
+                f"<font color='#ffffff'><b>{bilingual_label}</b></font>",
+                getSampleStyleSheet()["Normal"],
+            )
+        )
     table_rows.append(header_row)
 
     # Data rows: each repeatable item becomes one row; non-repeatable is a single row.
@@ -361,7 +442,11 @@ def _build_field_table_rows(
 
             if _field_uses_vernacular(field):
                 translated_value = _translate_text(english_value_text, target_language_code, translation_cache)
-                if target_language_code == "en" or _same_text(english_value_text, translated_value):
+                if (
+                    target_language_code == "en"
+                    or not translated_value.strip()
+                    or _same_text(english_value_text, translated_value)
+                ):
                     value_html = escape(english_value_text)
                 else:
                     if multilingual_font_name and translated_value:
@@ -394,6 +479,17 @@ def _build_pdf_bytes(
         spaceBefore=8,
         spaceAfter=4,
     )
+    header_title = ParagraphStyle(
+        "HeaderTitle",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#127ae2"),
+    )
+    header_contact = ParagraphStyle(
+        "HeaderContact",
+        parent=styles["Normal"],
+        alignment=TA_CENTER,
+    )
     normal = styles["Normal"]
     normal.leading = 14
 
@@ -407,6 +503,7 @@ def _build_pdf_bytes(
         bottomMargin=0.7 * inch,
     )
 
+    issued_at_text = _format_issue_datetime(prescription, hospital)
     story = []
     logo = _build_logo_flowable(hospital)
     if logo is not None:
@@ -414,34 +511,39 @@ def _build_pdf_bytes(
         story.append(Spacer(1, 0.08 * inch))
 
     hospital_name = hospital.get("name") or hospital_config.get("hospital_name") or "Hospital"
-    story.append(Paragraph(f"<b>{hospital_name}</b>", styles["Title"]))
+    story.append(Paragraph(f"<b>{hospital_name}</b>", header_title))
     contact_line = " | ".join(
         [x for x in [hospital.get("address"), hospital.get("phone"), hospital.get("email")] if x]
     )
     if contact_line:
-        story.append(Paragraph(contact_line, normal))
+        story.append(Paragraph(contact_line, header_contact))
     story.append(Spacer(1, 0.2 * inch))
 
-    meta = [
-        ["Prescription ID", str(prescription.get("prescription_id", "N/A"))],
-        ["Patient", str(prescription.get("patient_name", "N/A"))],
-        ["Doctor", _resolve_doctor_display_name(prescription)],
-        ["Date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")],
-    ]
-    meta_table = Table(meta, colWidths=[1.5 * inch, 4.8 * inch])
-    meta_table.setStyle(
+    doctor_name = _resolve_doctor_display_name(prescription)
+    patient_name = str(prescription.get("patient_name", "N/A"))
+    left_col = Paragraph(
+        f"<b>Doctor</b>: {escape(doctor_name)}<br/><b>Patient</b>: {escape(patient_name)}",
+        normal,
+    )
+    right_col = Paragraph(
+        f"<b>Prescription ID</b>: {escape(str(prescription.get('prescription_id', 'N/A')))}<br/><b>Date</b>: {escape(issued_at_text)}",
+        normal,
+    )
+    info_strip = Table([[left_col, right_col]], colWidths=[3.15 * inch, 3.15 * inch])
+    info_strip.setStyle(
         TableStyle(
             [
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), 10),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#cbd5e1")),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor("#cbd5e1")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
-    story.append(meta_table)
+    story.append(info_strip)
     story.append(Spacer(1, 0.2 * inch))
 
     target_language_code = str(translation.get("target_language_code") or "en").strip().lower() or "en"

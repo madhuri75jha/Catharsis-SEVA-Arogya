@@ -19,6 +19,105 @@
 
 ---
 
+## 🚀 Deployment Overview
+
+### Complete Deployment Flow
+
+```mermaid
+flowchart TB
+    A[Start Deployment] --> B[Prerequisites Check]
+    B --> C{Tools Installed?}
+    C -->|No| D[Install Tools]
+    C -->|Yes| E[AWS Setup]
+    D --> E
+    
+    E --> F[Create Cognito Pool]
+    E --> G[Create S3 Buckets]
+    E --> H[Create Secrets]
+    E --> I[Enable Bedrock]
+    
+    F --> J[Infrastructure Deployment]
+    G --> J
+    H --> J
+    I --> J
+    
+    J --> K[Terraform Init]
+    K --> L[Terraform Plan]
+    L --> M[Terraform Apply]
+    M --> N{Success?}
+    N -->|No| O[Troubleshoot]
+    O --> L
+    N -->|Yes| P[Application Deployment]
+    
+    P --> Q[Build Docker Image]
+    Q --> R[Push to ECR]
+    R --> S[Update ECS Service]
+    S --> T{Deployment Stable?}
+    T -->|No| U[Check Logs]
+    U --> Q
+    T -->|Yes| V[Database Setup]
+    
+    V --> W[Update Secrets]
+    W --> X[Run Migrations]
+    X --> Y[Seed Data]
+    Y --> Z[Validation]
+    
+    Z --> AA[Health Checks]
+    Z --> AB[AWS Connectivity]
+    Z --> AC[Manual Testing]
+    
+    AA --> AD{All Pass?}
+    AB --> AD
+    AC --> AD
+    AD -->|No| AE[Rollback]
+    AD -->|Yes| AF[Deployment Complete]
+    
+    style A fill:#e3f2fd
+    style AF fill:#c8e6c9
+    style AE fill:#ffcdd2
+    style O fill:#fff3e0
+    style U fill:#fff3e0
+```
+
+### Deployment Timeline
+
+```mermaid
+gantt
+    title Deployment Timeline (Total: ~20 minutes)
+    dateFormat mm:ss
+    axisFormat %M:%S
+    
+    section Prerequisites
+    Tools Check           :00:00, 2m
+    AWS CLI Config        :02:00, 1m
+    
+    section AWS Setup
+    Cognito Setup         :03:00, 2m
+    S3 Buckets            :05:00, 2m
+    Secrets Manager       :07:00, 1m
+    Bedrock Access        :08:00, 1m
+    
+    section Infrastructure
+    Terraform Init        :09:00, 1m
+    Terraform Plan        :10:00, 2m
+    Terraform Apply       :12:00, 10m
+    
+    section Application
+    Docker Build          :22:00, 3m
+    ECR Push              :25:00, 2m
+    ECS Update            :27:00, 3m
+    
+    section Database
+    Migrations            :30:00, 2m
+    Seed Data             :32:00, 1m
+    
+    section Validation
+    Health Checks         :33:00, 2m
+    Manual Testing        :35:00, 5m
+```
+
+---
+
 ## 1. Prerequisites
 
 ### Required Tools
@@ -451,6 +550,72 @@ aws ecs register-task-definition \
 ---
 
 ## 8. Troubleshooting
+
+### Troubleshooting Decision Tree
+
+```mermaid
+flowchart TD
+    A[Deployment Issue?] --> B{What Failed?}
+    
+    B -->|ECS Tasks| C[ECS Tasks Not Starting]
+    B -->|Health Checks| D[ALB Health Checks Failing]
+    B -->|Database| E[Database Connection Issues]
+    B -->|Secrets| F[Secrets Manager Access]
+    B -->|AI Services| G[Bedrock/Transcribe Issues]
+    
+    C --> C1{Check Logs}
+    C1 --> C2[Image Pull Error?]
+    C1 --> C3[Memory/CPU Issue?]
+    C1 --> C4[Health Check Timeout?]
+    C2 --> C5[Fix ECR Permissions]
+    C3 --> C6[Increase Resources]
+    C4 --> C7[Fix /health Endpoint]
+    
+    D --> D1{Check Target Health}
+    D1 --> D2[Port Mismatch?]
+    D1 --> D3[Security Group?]
+    D1 --> D4[App Not Ready?]
+    D2 --> D5[Use Port 5000]
+    D3 --> D6[Allow ALB → ECS]
+    D4 --> D7[Increase Timeout]
+    
+    E --> E1{Test Connection}
+    E1 --> E2[Security Group?]
+    E1 --> E3[Wrong Credentials?]
+    E1 --> E4[DB Not Ready?]
+    E2 --> E5[Allow ECS → RDS]
+    E3 --> E6[Update Secrets]
+    E4 --> E7[Wait for RDS]
+    
+    F --> F1{Test Secret Retrieval}
+    F1 --> F2[IAM Permissions?]
+    F1 --> F3[Secret Not Found?]
+    F2 --> F4[Add IAM Policy]
+    F3 --> F5[Create Secret]
+    
+    G --> G1{Which Service?}
+    G1 --> G2[Bedrock]
+    G1 --> G3[Transcribe]
+    G2 --> G4[Model Access?]
+    G3 --> G5[IAM Permissions?]
+    G4 --> G6[Request in Console]
+    G5 --> G7[Add IAM Policy]
+    
+    style A fill:#ffebee
+    style C5 fill:#c8e6c9
+    style C6 fill:#c8e6c9
+    style C7 fill:#c8e6c9
+    style D5 fill:#c8e6c9
+    style D6 fill:#c8e6c9
+    style D7 fill:#c8e6c9
+    style E5 fill:#c8e6c9
+    style E6 fill:#c8e6c9
+    style E7 fill:#c8e6c9
+    style F4 fill:#c8e6c9
+    style F5 fill:#c8e6c9
+    style G6 fill:#c8e6c9
+    style G7 fill:#c8e6c9
+```
 
 ### ECS Tasks Not Starting
 

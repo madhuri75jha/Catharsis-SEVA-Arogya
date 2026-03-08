@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify, session
 from functools import wraps
 from datetime import datetime
 import json
+import re
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -24,6 +25,7 @@ bedrock_client = None
 database_manager = None
 lambda_pdf_service = None
 app_config_manager = None
+cognito_auth_manager = None
 _translate_languages_cache: Dict[str, Any] = {"loaded_at": 0.0, "languages": []}
 _translate_languages_ttl_seconds = 900
 
@@ -36,9 +38,10 @@ def init_prescription_routes(
     db_manager=None,
     lambda_pdf_svc=None,
     cfg_manager=None,
+    auth_svc=None,
 ):
     """Initialize prescription routes with service instances"""
-    global prescription_service, rbac_service, pdf_generator, bedrock_client, database_manager, lambda_pdf_service, app_config_manager
+    global prescription_service, rbac_service, pdf_generator, bedrock_client, database_manager, lambda_pdf_service, app_config_manager, cognito_auth_manager
     # Backward compatibility: older callers pass 4 args with db_manager as 4th param.
     if db_manager is None and bedrock is not None and hasattr(bedrock, 'execute_with_retry'):
         db_manager = bedrock
@@ -51,6 +54,7 @@ def init_prescription_routes(
     database_manager = db_manager
     lambda_pdf_service = lambda_pdf_svc
     app_config_manager = cfg_manager
+    cognito_auth_manager = auth_svc
     logger.info("Prescription routes initialized")
 
 
@@ -708,17 +712,54 @@ def generate_pdf(prescription_id):
         }
         
         # Get doctor info
-        doctor_query = "SELECT name, specialty, signature_url FROM doctors WHERE doctor_id = %s"
+        def _sanitize_doctor_name(raw_name: str) -> str:
+            cleaned = re.sub(r'^\s*(dr\.?|doctor)\s+', '', str(raw_name or '').strip(), flags=re.IGNORECASE).strip()
+            if cleaned.lower() in {'', 'doctor', 'dr'}:
+                return ''
+            return cleaned
+
+        def _name_from_cognito(username: str) -> str:
+            if not cognito_auth_manager or not username:
+                return ''
+            cognito_user = cognito_auth_manager.get_user_by_username(username)
+            if not cognito_user:
+                return ''
+            attrs = cognito_user.get('attributes', {})
+            return (
+                attrs.get('name')
+                or " ".join(part for part in [attrs.get('given_name', ''), attrs.get('family_name', '')] if part)
+            ).strip()
+
+        doctor_query = """
+        SELECT name, specialty, signature_url
+        FROM doctors
+        WHERE LOWER(doctor_id) = LOWER(%s)
+        LIMIT 1
+        """
         doctor_result = database_manager.execute_with_retry(doctor_query, (prescription['created_by_doctor_id'],))
+        doctor_specialty = ''
+        doctor_signature_url = ''
         if doctor_result:
-            prescription['doctor_name'] = doctor_result[0][0]
-            prescription['doctor_specialty'] = doctor_result[0][1]
-            prescription['doctor_signature_url'] = doctor_result[0][2]
-        else:
-            # Fallback when doctor profile row is missing/out-of-sync with prescription creator ID.
-            prescription['doctor_name'] = 'Doctor'
+            doctor_specialty = doctor_result[0][1]
+            doctor_signature_url = doctor_result[0][2]
+
+        candidate_names = []
+        if doctor_result:
+            candidate_names.append(str(doctor_result[0][0] or ''))
+        candidate_names.append(str(prescription.get('doctor_name') or ''))
+        session_attrs = session.get('user_attributes') or {}
+        candidate_names.append(str(session_attrs.get('name') or ''))
+        candidate_names.append(str(session.get('user_name') or ''))
+        candidate_names.append(_name_from_cognito(str(prescription.get('created_by_doctor_id') or '')))
+        candidate_names.append(_name_from_cognito(str(session.get('user_id') or '')))
+
+        resolved_name = next((n for n in (_sanitize_doctor_name(c) for c in candidate_names) if n), 'Doctor')
+        prescription['doctor_name'] = resolved_name
+        prescription['doctor_specialty'] = doctor_specialty
+        prescription['doctor_signature_url'] = doctor_signature_url
+        if resolved_name == 'Doctor':
             logger.warning(
-                "Doctor profile missing while generating PDF for prescription %s (doctor_id=%s)",
+                "Doctor display name unresolved while generating PDF for prescription %s (doctor_id=%s)",
                 prescription_id,
                 prescription.get('created_by_doctor_id'),
             )

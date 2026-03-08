@@ -140,35 +140,57 @@ curl http://localhost:5000/health/aws-connectivity
 
 ### High-Level Architecture
 
-```
-┌─────────────┐
-│   Doctor    │
-│  (Browser)  │
-└──────┬──────┘
-       │ HTTPS
-       ▼
-┌─────────────────────────────────────────┐
-│  AWS Application Load Balancer (ALB)   │
-│  - SSL Termination                      │
-│  - Health Checks                        │
-└──────┬──────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│  ECS Fargate (Flask API)                │
-│  - Serverless Containers                │
-│  - Auto-scaling (2-10 tasks)            │
-│  - Private Subnet                       │
-└──────┬──────────────────────────────────┘
-       │
-       ├─────────────────┬─────────────────┐
-       │                 │                 │
-       ▼                 ▼                 ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ RDS          │  │ AWS AI/ML    │  │ S3 Storage   │
-│ PostgreSQL   │  │ Services     │  │ Audio + PDFs │
-│ Multi-AZ     │  │              │  │              │
-└──────────────┘  └──────────────┘  └──────────────┘
+```mermaid
+graph TB
+    subgraph "User Layer"
+        A[Doctor Browser]
+    end
+    
+    subgraph "AWS Cloud"
+        subgraph "Edge & Gateway"
+            B[Application Load Balancer]
+        end
+        
+        subgraph "Application Layer"
+            C[ECS Fargate<br/>Flask API]
+        end
+        
+        subgraph "AI/ML Services"
+            D[Transcribe Medical]
+            E[Comprehend Medical]
+            F[Bedrock Claude 3]
+            G[Translate]
+        end
+        
+        subgraph "Data Layer"
+            H[(RDS PostgreSQL)]
+            I[S3 Audio]
+            J[S3 PDFs]
+        end
+        
+        subgraph "Security"
+            K[Cognito]
+            L[Secrets Manager]
+        end
+    end
+    
+    A -->|HTTPS| B
+    B --> C
+    C --> D
+    C --> E
+    C --> F
+    C --> G
+    C --> H
+    C --> I
+    C --> J
+    C --> K
+    C --> L
+    
+    style A fill:#e3f2fd
+    style C fill:#fff3e0
+    style H fill:#f3e5f5
+    style I fill:#e8f5e9
+    style J fill:#e8f5e9
 ```
 
 ### 5-Layer Architecture
@@ -181,18 +203,26 @@ curl http://localhost:5000/health/aws-connectivity
 
 ### AI Data Pipeline
 
-```
-Doctor speaks
-    ↓
-[Amazon Transcribe Medical] → Medical transcript
-    ↓
-[Amazon Comprehend Medical] → Extracted entities
-    ↓
-[Amazon Bedrock - Claude 3] → Structured prescription
-    ↓
-[Validation Layer] → Editable form with confidence scores
-    ↓
-[PDF Generation + Translate] → Professional prescription
+```mermaid
+flowchart LR
+    A[Doctor Speaks] --> B[Transcribe Medical]
+    B --> C[Medical Transcript]
+    C --> D[Comprehend Medical]
+    D --> E[Extracted Entities]
+    E --> F[Bedrock Claude 3]
+    F --> G[Structured Prescription]
+    G --> H[Validation Layer]
+    H --> I[Editable Form<br/>with Confidence Scores]
+    I --> J[PDF Generation]
+    J --> K[Translate]
+    K --> L[Professional Prescription]
+    
+    style A fill:#e3f2fd
+    style B fill:#f3e5f5
+    style D fill:#fff3e0
+    style F fill:#ffe0b2
+    style H fill:#e8f5e9
+    style L fill:#c8e6c9
 ```
 
 **Processing Time:** < 3 seconds end-to-end

@@ -15,6 +15,7 @@ import os
 import json
 import logging
 import uuid
+import hmac
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -276,7 +277,8 @@ def init_app():
             pdf_generator,
             db_manager=database_manager,
             lambda_pdf_svc=lambda_pdf_service,
-            cfg_manager=config_manager
+            cfg_manager=config_manager,
+            auth_svc=auth_manager,
         )
         init_hospital_routes(rbac_service, database_manager, cloudwatch_service, auth_svc=auth_manager)
         
@@ -349,6 +351,87 @@ def _read_log_tail(log_path: str, lines: int) -> str:
         return ""
     with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
         return "".join(deque(f, maxlen=lines))
+
+
+def _truncate_all_public_tables(keep_migrations: bool = False) -> list[str]:
+    """Truncate all tables in public schema with RESTART IDENTITY CASCADE."""
+    if not database_manager:
+        raise RuntimeError("Database manager is not initialized")
+
+    from psycopg2 import sql as psycopg2_sql
+
+    with database_manager.get_connection() as conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT tablename
+                    FROM pg_tables
+                    WHERE schemaname = 'public'
+                    ORDER BY tablename
+                    """
+                )
+                tables = [row[0] for row in cursor.fetchall()]
+
+                if keep_migrations:
+                    tables = [table for table in tables if table != 'schema_migrations']
+
+                if not tables:
+                    conn.rollback()
+                    return []
+
+                truncate_stmt = psycopg2_sql.SQL(
+                    "TRUNCATE TABLE {} RESTART IDENTITY CASCADE"
+                ).format(
+                    psycopg2_sql.SQL(", ").join(
+                        psycopg2_sql.Identifier("public", table) for table in tables
+                    )
+                )
+                cursor.execute(truncate_stmt)
+
+            conn.commit()
+            return tables
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def _purge_all_cognito_users() -> int:
+    """Disable and delete all users in configured Cognito User Pool."""
+    if not auth_manager or not getattr(auth_manager, 'client', None):
+        raise RuntimeError("Auth manager is not initialized")
+
+    client = auth_manager.client
+    user_pool_id = getattr(auth_manager, 'user_pool_id', None)
+    if not user_pool_id:
+        raise RuntimeError("Cognito user pool ID is not configured")
+
+    usernames = []
+    pagination_token = None
+
+    while True:
+        kwargs = {'UserPoolId': user_pool_id}
+        if pagination_token:
+            kwargs['PaginationToken'] = pagination_token
+
+        response = client.list_users(**kwargs)
+        usernames.extend([user.get('Username') for user in response.get('Users', []) if user.get('Username')])
+        pagination_token = response.get('PaginationToken')
+        if not pagination_token:
+            break
+
+    deleted_count = 0
+    for username in usernames:
+        try:
+            client.admin_disable_user(UserPoolId=user_pool_id, Username=username)
+        except Exception:
+            # Ignore disable failures and attempt delete.
+            pass
+
+        client.admin_delete_user(UserPoolId=user_pool_id, Username=username)
+        deleted_count += 1
+
+    return deleted_count
 
 
 def _generate_hospital_id() -> str:
@@ -522,6 +605,61 @@ def debug_logs():
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to read log file: {e}")
         return jsonify({'success': False, 'message': 'Failed to read log file'}), 500
+
+
+@app.route('/api/v1/internal/system-reset', methods=['POST'])
+def internal_system_reset():
+    """Token-protected internal endpoint for full data reset (DB + Cognito)."""
+    reset_token = os.getenv('SYSTEM_RESET_TOKEN', '').strip()
+    provided_token = (
+        (request.headers.get('X-System-Reset-Token') or '').strip()
+        or (request.args.get('token') or '').strip()
+    )
+
+    # Hide endpoint unless explicitly enabled by token configuration.
+    if not reset_token:
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+
+    if not provided_token or not hmac.compare_digest(provided_token, reset_token):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    if payload.get('confirm') != 'RESET_ALL_DATA':
+        return jsonify({'success': False, 'message': 'Missing or invalid confirmation payload'}), 400
+
+    reset_db = bool(payload.get('reset_db', True))
+    reset_cognito = bool(payload.get('reset_cognito', True))
+    keep_migrations = bool(payload.get('keep_migrations', False))
+
+    logger = logging.getLogger(__name__)
+    result = {
+        'success': True,
+        'db': {'reset': reset_db, 'tables_truncated': [], 'table_count': 0},
+        'cognito': {'reset': reset_cognito, 'users_deleted': 0},
+    }
+
+    try:
+        if reset_db:
+            tables = _truncate_all_public_tables(keep_migrations=keep_migrations)
+            result['db']['tables_truncated'] = tables
+            result['db']['table_count'] = len(tables)
+
+        if reset_cognito:
+            deleted = _purge_all_cognito_users()
+            result['cognito']['users_deleted'] = deleted
+
+        logger.warning(
+            "Internal system reset executed: db_reset=%s table_count=%s cognito_reset=%s users_deleted=%s",
+            reset_db,
+            result['db']['table_count'],
+            reset_cognito,
+            result['cognito']['users_deleted'],
+        )
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Internal system reset failed: {str(e)}")
+        return jsonify({'success': False, 'message': f'Reset failed: {str(e)}'}), 500
 
 
 @app.route('/home')

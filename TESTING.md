@@ -19,6 +19,58 @@
 
 ---
 
+## 🧪 Testing Architecture
+
+### Testing Pyramid
+
+```mermaid
+graph TB
+    subgraph "Testing Pyramid"
+        E2E[E2E Tests<br/>10%<br/>Complete Workflows]
+        INT[Integration Tests<br/>20%<br/>Service Interactions]
+        UNIT[Unit Tests<br/>70%<br/>Individual Components]
+    end
+    
+    E2E --> INT
+    INT --> UNIT
+    
+    style E2E fill:#ffcdd2
+    style INT fill:#fff9c4
+    style UNIT fill:#c8e6c9
+```
+
+### Test Execution Flow
+
+```mermaid
+flowchart LR
+    A[Code Change] --> B[Unit Tests]
+    B --> C{Pass?}
+    C -->|No| D[Fix Code]
+    D --> B
+    C -->|Yes| E[Integration Tests]
+    E --> F{Pass?}
+    F -->|No| G[Fix Integration]
+    G --> E
+    F -->|Yes| H[Property Tests]
+    H --> I{Pass?}
+    I -->|No| J[Fix Logic]
+    J --> H
+    I -->|Yes| K[E2E Tests]
+    K --> L{Pass?}
+    L -->|No| M[Fix Workflow]
+    M --> K
+    L -->|Yes| N[Deploy]
+    
+    style A fill:#e3f2fd
+    style N fill:#c8e6c9
+    style D fill:#ffcdd2
+    style G fill:#ffcdd2
+    style J fill:#ffcdd2
+    style M fill:#ffcdd2
+```
+
+---
+
 ## 1. Testing Overview
 
 ### Testing Strategy
@@ -494,6 +546,98 @@ curl http://localhost:5000/api/v1/prescriptions/$(cat prescription_id.txt) \
 ---
 
 ## 9. End-to-End Testing
+
+### E2E Workflow Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Test Script
+    participant API as Flask API
+    participant COG as Cognito
+    participant S3 as S3
+    participant TR as Transcribe
+    participant BR as Bedrock
+    participant DB as Database
+    
+    Note over T,DB: User Registration & Login
+    T->>API: POST /auth/register
+    API->>COG: Create user
+    COG-->>API: User created
+    API-->>T: Success
+    
+    T->>API: POST /auth/verify
+    API->>COG: Confirm user
+    COG-->>API: Confirmed
+    API-->>T: Verified
+    
+    T->>API: POST /auth/login
+    API->>COG: Authenticate
+    COG-->>API: JWT tokens
+    API-->>T: Access token
+    
+    Note over T,DB: Audio Upload & Transcription
+    T->>API: POST /audio/upload
+    API->>S3: PutObject
+    S3-->>API: S3 key
+    API-->>T: S3 key
+    
+    T->>API: POST /transcribe
+    API->>TR: StartTranscriptionJob
+    TR-->>API: Job ID
+    API-->>T: Job ID
+    
+    loop Poll Status
+        T->>API: GET /transcribe/status/{job_id}
+        API->>TR: GetTranscriptionJob
+        TR-->>API: Status
+        API-->>T: IN_PROGRESS/COMPLETED
+    end
+    
+    T->>API: GET /transcribe/result/{job_id}
+    API->>S3: Get transcript
+    S3-->>API: Transcript text
+    API->>BR: Extract entities
+    BR-->>API: Structured data
+    API->>DB: Save extraction
+    API-->>T: Transcript + entities
+    
+    Note over T,DB: Prescription Workflow
+    T->>API: POST /prescriptions
+    API->>DB: Create prescription (Draft)
+    DB-->>API: Prescription ID
+    API-->>T: Prescription ID
+    
+    T->>API: POST /prescriptions/{id}/transition-to-in-progress
+    API->>DB: Load AI content
+    DB-->>API: Sections
+    API-->>T: Sections with confidence
+    
+    loop Approve Sections
+        T->>API: POST /prescriptions/{id}/sections/{key}/approve
+        API->>DB: Mark approved
+        DB-->>API: Updated
+        API-->>T: Success
+    end
+    
+    T->>API: POST /prescriptions/{id}/finalize
+    API->>DB: Update state to Finalized
+    DB-->>API: Finalized
+    API-->>T: Success
+    
+    T->>API: POST /prescriptions/{id}/pdf
+    API->>S3: Generate & upload PDF
+    S3-->>API: Presigned URL
+    API-->>T: Download URL
+    
+    T->>T: Download & verify PDF
+    
+    Note over T,DB: Cleanup
+    T->>API: DELETE /prescriptions/{id}
+    API->>DB: Soft delete
+    DB-->>API: Deleted
+    API-->>T: Success
+```
 
 ### Complete Workflow Test Script
 
