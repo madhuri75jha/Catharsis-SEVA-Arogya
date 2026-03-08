@@ -232,3 +232,53 @@ def test_section_normalization_uses_display_order_from_config():
     normalized = handler._normalize_sections(prescription, hospital_config)
 
     assert [section["key"] for section in normalized] == ["patient_details_1", "vitals", "diagnosis"]
+
+
+def test_build_field_table_rows_returns_horizontal_rows_for_repeatable_section():
+    section_cfg = {
+        "repeatable": True,
+        "fields": [
+            {"field_name": "medicine_name", "display_label": "Medicine Name", "vernacular_language": True},
+            {"field_name": "dose", "display_label": "Dose", "vernacular_language": True},
+        ],
+    }
+    content = [
+        {"medicine_name": "Amoxicillin", "dose": "500mg"},
+        {"medicine_name": "Paracetamol", "dose": "650mg"},
+    ]
+
+    rows = handler._build_field_table_rows(
+        content,
+        section_cfg,
+        "en",
+        {},
+        multilingual_font_name="",
+    )
+
+    # header + 2 medication rows, each with 2 columns
+    assert len(rows) == 3
+    assert all(len(row) == 2 for row in rows)
+
+
+def test_build_field_table_rows_avoids_duplicate_bilingual_text_when_translation_matches(monkeypatch):
+    section_cfg = {
+        "repeatable": False,
+        "fields": [
+            {"field_name": "blood_pressure", "display_label": "BP", "vernacular_language": True},
+        ],
+    }
+    content = {"blood_pressure": "125/85"}
+
+    monkeypatch.setattr(handler, "_translate_text", lambda text, _lang, _cache: text)
+    rows = handler._build_field_table_rows(
+        content,
+        section_cfg,
+        "hi",
+        {},
+        multilingual_font_name="",
+    )
+
+    header_markup = rows[0][0][1][0]  # Paragraph tuple -> args[0]
+    value_markup = rows[1][0][1][0]
+    assert " / " not in header_markup
+    assert "<br/>" not in value_markup

@@ -10,6 +10,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import boto3
 from botocore.config import Config
+from urllib.parse import unquote, urlparse
+from urllib.request import Request, urlopen
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -48,6 +50,7 @@ class PDFGenerator:
             raise ImportError("ReportLab is required for PDF generation. Install with: pip install reportlab")
         
         self.storage = storage_manager
+        self._s3_client = boto3.client('s3')
         self.styles = getSampleStyleSheet()
         self.page_width, self.page_height = A4
         
@@ -332,16 +335,10 @@ class PDFGenerator:
         elements = []
         
         # Hospital logo (if available)
-        logo_url = hospital.get('logo_url')
-        if logo_url:
-            try:
-                # Note: In production, you'd download the logo from S3
-                # For now, we'll skip the logo if it's not accessible
-                # logo = Image(logo_url, width=1*inch, height=1*inch)
-                # elements.append(logo)
-                pass
-            except Exception as e:
-                logger.warning(f"Could not load hospital logo: {str(e)}")
+        logo_flowable = self._build_logo_flowable(hospital)
+        if logo_flowable is not None:
+            elements.append(logo_flowable)
+            elements.append(Spacer(1, 0.08 * inch))
         
         hospital_name = str(hospital.get('name') or 'Hospital')
         elements.append(Paragraph(hospital_name, self.hospital_name_style))
@@ -380,6 +377,75 @@ class PDFGenerator:
         elements.append(Spacer(1, 0.12 * inch))
         
         return elements
+
+    def _extract_s3_bucket_key_from_url(self, url: str) -> tuple[str, str]:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = parsed.path.lstrip('/')
+
+        if parsed.scheme == 's3':
+            return parsed.netloc, unquote(path)
+
+        if '.s3.' in host and not host.startswith('s3.'):
+            bucket = host.split('.s3.', 1)[0]
+            return bucket, unquote(path)
+
+        if host.startswith('s3.') and path:
+            parts = path.split('/', 1)
+            if len(parts) == 2:
+                return parts[0], unquote(parts[1])
+
+        return '', ''
+
+    def _download_url_bytes(self, url: str, timeout_seconds: int = 6) -> bytes:
+        req = Request(url, headers={'User-Agent': 'seva-arogya-pdf/1.0'})
+        with urlopen(req, timeout=timeout_seconds) as resp:  # nosec B310 - controlled logo URL fetch
+            return resp.read()
+
+    def _load_logo_bytes(self, hospital: Dict[str, Any]) -> bytes:
+        logo_url = str(hospital.get('logo_url') or '').strip()
+        if not logo_url:
+            return b''
+
+        if logo_url.startswith('http://') or logo_url.startswith('https://'):
+            try:
+                payload = self._download_url_bytes(logo_url)
+                if payload:
+                    return payload
+            except Exception:
+                pass
+
+            try:
+                bucket, key = self._extract_s3_bucket_key_from_url(logo_url)
+                if bucket and key:
+                    obj = self._s3_client.get_object(Bucket=bucket, Key=key)
+                    return obj['Body'].read()
+            except Exception:
+                return b''
+
+        if logo_url.startswith('s3://'):
+            try:
+                bucket, key = self._extract_s3_bucket_key_from_url(logo_url)
+                if bucket and key:
+                    obj = self._s3_client.get_object(Bucket=bucket, Key=key)
+                    return obj['Body'].read()
+            except Exception:
+                return b''
+
+        return b''
+
+    def _build_logo_flowable(self, hospital: Dict[str, Any]):
+        logo_bytes = self._load_logo_bytes(hospital)
+        if not logo_bytes:
+            return None
+        try:
+            logo = Image(BytesIO(logo_bytes))
+            logo._restrictSize(1.1 * inch, 1.1 * inch)
+            logo.hAlign = 'CENTER'
+            return logo
+        except Exception as e:
+            logger.warning(f"Could not render hospital logo: {str(e)}")
+            return None
     
     def _render_metadata(self, prescription: Dict[str, Any]) -> List:
         """

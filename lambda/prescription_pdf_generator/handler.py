@@ -6,6 +6,8 @@ import hashlib
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+from urllib.parse import unquote, urlparse
+from urllib.request import Request, urlopen
 from xml.sax.saxutils import escape
 
 import boto3
@@ -67,6 +69,82 @@ def _http(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _extract_s3_bucket_key_from_url(url: str) -> tuple[str, str]:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    path = parsed.path.lstrip("/")
+
+    if parsed.scheme == "s3":
+        return parsed.netloc, unquote(path)
+
+    if ".s3." in host and not host.startswith("s3."):
+        bucket = host.split(".s3.", 1)[0]
+        return bucket, unquote(path)
+
+    if host.startswith("s3.") and path:
+        parts = path.split("/", 1)
+        if len(parts) == 2:
+            return parts[0], unquote(parts[1])
+
+    return "", ""
+
+
+def _download_url_bytes(url: str, timeout_seconds: int = 6) -> bytes:
+    req = Request(url, headers={"User-Agent": "seva-arogya-pdf/1.0"})
+    with urlopen(req, timeout=timeout_seconds) as resp:  # nosec B310 - controlled logo URL fetch
+        return resp.read()
+
+
+def _load_logo_bytes(hospital: Dict[str, Any]) -> bytes:
+    logo_url = str(hospital.get("logo_url") or "").strip()
+    if not logo_url:
+        return b""
+
+    # Prefer direct URL fetch first (supports public and pre-signed URLs).
+    if logo_url.startswith("http://") or logo_url.startswith("https://"):
+        try:
+            payload = _download_url_bytes(logo_url)
+            if payload:
+                return payload
+        except Exception:
+            pass
+
+        # Fallback: parse S3-style URL and fetch via IAM credentials.
+        try:
+            bucket, key = _extract_s3_bucket_key_from_url(logo_url)
+            if bucket and key:
+                obj = s3.get_object(Bucket=bucket, Key=key)
+                return obj["Body"].read()
+        except Exception:
+            return b""
+
+    if logo_url.startswith("s3://"):
+        try:
+            bucket, key = _extract_s3_bucket_key_from_url(logo_url)
+            if bucket and key:
+                obj = s3.get_object(Bucket=bucket, Key=key)
+                return obj["Body"].read()
+        except Exception:
+            return b""
+
+    return b""
+
+
+def _build_logo_flowable(hospital: Dict[str, Any]):
+    logo_bytes = _load_logo_bytes(hospital)
+    if not logo_bytes:
+        return None
+    try:
+        from reportlab.platypus import Image
+
+        logo = Image(io.BytesIO(logo_bytes))
+        logo._restrictSize(1.1 * inch, 1.1 * inch)
+        logo.hAlign = "CENTER"
+        return logo
+    except Exception:
+        return None
 
 
 def _section_order_from_config(hospital_config: Dict[str, Any]) -> List[str]:
@@ -198,6 +276,12 @@ def _translate_text(text: str, target_language_code: str, translation_cache: Dic
         return normalized
 
 
+def _same_text(a: str, b: str) -> bool:
+    norm_a = " ".join(str(a or "").strip().lower().split())
+    norm_b = " ".join(str(b or "").strip().lower().split())
+    return bool(norm_a) and norm_a == norm_b
+
+
 def _register_multilingual_font(target_language_code: str) -> str:
     """Register bundled font for selected language when present."""
     try:
@@ -237,54 +321,63 @@ def _build_field_table_rows(
     if not fields:
         return []
 
-    rows: List[List[Paragraph]] = []
     repeatable = bool(section_cfg.get("repeatable"))
     section_rows = _coerce_section_rows(section_content, repeatable)
     if not section_rows:
         section_rows = [{}]
 
-    for idx, row_data in enumerate(section_rows):
-        if repeatable and len(section_rows) > 1:
-            item_label = Paragraph(f"<b>Item {idx + 1}</b>", getSampleStyleSheet()["Normal"])
-            rows.append([item_label, Paragraph("", getSampleStyleSheet()["Normal"])])
+    usable_fields = [field for field in fields if str(field.get("field_name") or "").strip()]
+    if not usable_fields:
+        return []
 
-        for field in fields:
-            field_name = str(field.get("field_name") or "").strip()
-            if not field_name:
-                continue
-            english_label = str(field.get("display_label") or field_name.replace("_", " ").title()).strip()
-            translated_label = _translate_text(english_label, target_language_code, translation_cache)
+    table_rows: List[List[Paragraph]] = []
+
+    # Header row (horizontal): one column per field.
+    header_row: List[Paragraph] = []
+    for field in usable_fields:
+        field_name = str(field.get("field_name") or "").strip()
+        english_label = str(field.get("display_label") or field_name.replace("_", " ").title()).strip()
+        translated_label = _translate_text(english_label, target_language_code, translation_cache)
+        if target_language_code == "en" or _same_text(english_label, translated_label):
+            bilingual_label = escape(english_label)
+        else:
             if multilingual_font_name and translated_label:
                 translated_label_html = f"<font name='{multilingual_font_name}'>{escape(translated_label)}</font>"
             else:
                 translated_label_html = escape(translated_label)
             bilingual_label = f"{escape(english_label)} / {translated_label_html}"
+        header_row.append(Paragraph(f"<b>{bilingual_label}</b>", getSampleStyleSheet()["Normal"]))
+    table_rows.append(header_row)
 
+    # Data rows: each repeatable item becomes one row; non-repeatable is a single row.
+    for row_data in section_rows:
+        value_row: List[Paragraph] = []
+        for field in usable_fields:
+            field_name = str(field.get("field_name") or "").strip()
             english_value = row_data.get(field_name, "")
-            if not english_value and row_data.get("_raw_content") and len(fields) == 1:
+            if not english_value and row_data.get("_raw_content") and len(usable_fields) == 1:
                 english_value = row_data.get("_raw_content")
             english_value_text = str(english_value or "").strip() or "-"
 
             if _field_uses_vernacular(field):
                 translated_value = _translate_text(english_value_text, target_language_code, translation_cache)
-                if multilingual_font_name and translated_value:
-                    translated_value_html = (
-                        f"<font name='{multilingual_font_name}' size='8' color='#475569'>{escape(translated_value)}</font>"
-                    )
+                if target_language_code == "en" or _same_text(english_value_text, translated_value):
+                    value_html = escape(english_value_text)
                 else:
-                    translated_value_html = f"<font size='8' color='#475569'>{escape(translated_value)}</font>"
-                value_html = f"{escape(english_value_text)}<br/>{translated_value_html}"
+                    if multilingual_font_name and translated_value:
+                        translated_value_html = (
+                            f"<font name='{multilingual_font_name}' size='8' color='#475569'>{escape(translated_value)}</font>"
+                        )
+                    else:
+                        translated_value_html = f"<font size='8' color='#475569'>{escape(translated_value)}</font>"
+                    value_html = f"{escape(english_value_text)}<br/>{translated_value_html}"
             else:
                 value_html = escape(english_value_text)
 
-            rows.append(
-                [
-                    Paragraph(f"<b>{bilingual_label}</b>", getSampleStyleSheet()["Normal"]),
-                    Paragraph(value_html.replace("\n", "<br/>"), getSampleStyleSheet()["Normal"]),
-                ]
-            )
+            value_row.append(Paragraph(value_html.replace("\n", "<br/>"), getSampleStyleSheet()["Normal"]))
+        table_rows.append(value_row)
 
-    return rows
+    return table_rows
 
 
 def _build_pdf_bytes(
@@ -315,6 +408,11 @@ def _build_pdf_bytes(
     )
 
     story = []
+    logo = _build_logo_flowable(hospital)
+    if logo is not None:
+        story.append(logo)
+        story.append(Spacer(1, 0.08 * inch))
+
     hospital_name = hospital.get("name") or hospital_config.get("hospital_name") or "Hospital"
     story.append(Paragraph(f"<b>{hospital_name}</b>", styles["Title"]))
     contact_line = " | ".join(
@@ -369,13 +467,19 @@ def _build_pdf_bytes(
                 multilingual_font_name=multilingual_font_name,
             )
             if field_rows:
-                table = Table(field_rows, colWidths=[2.4 * inch, 3.9 * inch])
+                column_count = max(len(field_rows[0]), 1)
+                total_width = 6.3 * inch
+                col_width = total_width / column_count
+                table = Table(field_rows, colWidths=[col_width] * column_count)
                 table.setStyle(
                     TableStyle(
                         [
                             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
                             ("VALIGN", (0, 0), (-1, -1), "TOP"),
                             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ffffff")),
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#127ae2")),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                             ("LEFTPADDING", (0, 0), (-1, -1), 6),
                             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                             ("TOPPADDING", (0, 0), (-1, -1), 4),
